@@ -47,4 +47,11 @@ Status new_configured(const Config& cfg, DType dt, Layer* out);
 // CUDA: one-row-per-thread stable Softmax / sparsemax / entmax (f64 exp → f32).
 Status forward(const Layer& layer, const TensorF32& input, TensorF32* pre, TensorF32* post);
 
+// Jacobian dX only (weightless). pre = probabilities from forward.
+Status backward_f32(const Layer& layer, const TensorF32& grad_out, const TensorF32& input,
+                    const TensorF32& pre, TensorF32* grad_in, TensorF32* grad_w);
+
+// No-op (weightless); validates non-null layer.
+Status apply_grad_sgd(Layer* layer, const TensorF32& dW, double lr);
+
 } // namespace welvet::softmax

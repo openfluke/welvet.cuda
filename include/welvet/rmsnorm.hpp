@@ -25,4 +25,10 @@ Status new_configured(const Config& cfg, DType dt, const float* gamma_init, Laye
 // input shape [batch,dim] or [batch,seq,dim].
 Status forward(Layer& layer, const TensorF32& input, TensorF32* pre, TensorF32* post);
 
+// NormalBP: dγ and dx; pre must be x̂ from forward (Go/cpp exact_bit).
+Status backward_f32(const Layer& layer, const TensorF32& grad_out, const TensorF32& input,
+                    const TensorF32& pre, TensorF32* grad_in, TensorF32* grad_w);
+
+Status apply_grad_sgd(Layer* layer, const TensorF32& dW, double lr);
+
 } // namespace welvet::rmsnorm

@@ -34,4 +34,14 @@ Status new_configured(const Config& cfg, DType dt, const float* packed_or_null, 
 // 4-gate Dense MatVec on CUDA; host f64 sigmoid/tanh to match Go/cpp exact_bit.
 Status forward(Layer& layer, const TensorF32& input, TensorF32* pre, TensorF32* post);
 
+int grad_w_size(const Layer& layer);
+
+// NormalBP BPTT: loom [i|f|g|o] packs. pre = [i,f,g,o,c] tape.
+Status backward_f32(Layer& layer, const TensorF32& grad_out, const TensorF32& input,
+                    const TensorF32& pre, TensorF32* grad_in, TensorF32* grad_w);
+
+Status apply_grad_sgd(Layer* layer, const TensorF32& dW, double lr);
+
+Status export_packed_f32(const Layer& layer, float* dst);
+
 } // namespace welvet::lstm

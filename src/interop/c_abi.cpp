@@ -9,8 +9,10 @@
 #include "welvet/cuda/device.hpp"
 #include "welvet/dense.hpp"
 #include "welvet/dense_session.hpp"
+#include "welvet/dtype.hpp"
 #include "welvet/embedding.hpp"
 #include "welvet/gaps.hpp"
+#include "welvet/runtime/training.hpp"
 #include "welvet/gdn.hpp"
 #include "welvet/kmeans.hpp"
 #include "welvet/layernorm.hpp"
@@ -25,6 +27,7 @@
 #include "welvet/seqmix.hpp"
 #include "welvet/sequential.hpp"
 #include "welvet/softmax.hpp"
+#include "welvet/stack.hpp"
 #include "welvet/status.hpp"
 #include "welvet/swiglu.hpp"
 #include "welvet/tensor.hpp"
@@ -48,8 +51,8 @@ welvet_status to_c(const welvet::Status& st) {
 extern "C" {
 
 const char* welvet_version(void) {
-  // Leaf FormatNone forwards signed (22 layers + seqmix; Stack→NormalBP) → board 27/100.
-  return "0.27";
+  // Leaf FormatNone + NormalBP Mode 1 signed (TestGoVCudaNormalBP) → board 51/100.
+  return "0.51";
 }
 
 const char* welvet_runtime_identity(void) {
@@ -113,6 +116,74 @@ welvet_status welvet_dense_forward_f32(int32_t batch, int32_t in, int32_t out, i
   return to_c(welvet::Status::Ok());
 }
 
+welvet_status welvet_dense_normalbp_f32(int32_t batch, int32_t in, int32_t out, int32_t act,
+                                        int32_t dtype, int32_t /*backend*/, const float* W_init,
+                                        const double* bias, size_t bias_len, const float* x,
+                                        const float* grad_or_target, int32_t use_target, double lr,
+                                        float* pre, float* post, float* dX, float* dW,
+                                        float* W_after, double* loss) {
+  if (batch <= 0 || in <= 0 || out <= 0 || !W_init || !x || !grad_or_target || !pre || !post ||
+      !dX || !dW || !W_after || !loss) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "invalid argument");
+    return st;
+  }
+  if (dtype < 0 || dtype >= welvet::kNumDTypes) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "bad dtype %d", dtype);
+    return st;
+  }
+  if (auto st = welvet::cuda::init_default_device(); !st) return to_c(st);
+
+  welvet::dense::Layer layer;
+  auto st = welvet::dense::new_layer(in, out, static_cast<welvet::Activation>(act),
+                                     static_cast<welvet::DType>(dtype), W_init, &layer);
+  if (!st) return to_c(st);
+  if (bias && bias_len > 0) {
+    layer.weights.bias.assign(bias, bias + bias_len);
+  }
+
+  welvet::TensorF32 input;
+  input.shape = {batch, in};
+  input.data.assign(x, x + static_cast<std::size_t>(batch * in));
+
+  welvet::TensorF32 pre_t, post_t;
+  st = welvet::dense::forward_f32(layer, input, &pre_t, &post_t);
+  if (!st) return to_c(st);
+
+  welvet::TensorF32 gy;
+  gy.shape = {batch, out};
+  gy.data.assign(grad_or_target, grad_or_target + static_cast<std::size_t>(batch * out));
+  *loss = 0.0;
+  if (use_target) {
+    st = welvet::runtime::training::mse(post_t, gy, loss);
+    if (!st) return to_c(st);
+    welvet::TensorF32 gtmp;
+    st = welvet::runtime::training::mse_grad(post_t, gy, &gtmp);
+    if (!st) return to_c(st);
+    gy = std::move(gtmp);
+  }
+
+  welvet::TensorF32 dx_t, dw_t;
+  st = welvet::dense::backward_f32(layer, gy, input, pre_t, &dx_t, &dw_t);
+  if (!st) return to_c(st);
+
+  if (lr != 0.0) {
+    st = welvet::dense::apply_grad_sgd(&layer, dw_t, lr);
+    if (!st) return to_c(st);
+  }
+  st = layer.weights.export_f32(W_after);
+  if (!st) return to_c(st);
+
+  std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
+  std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
+  std::memcpy(dX, dx_t.data.data(), dx_t.data.size() * sizeof(float));
+  std::memcpy(dW, dw_t.data.data(), dw_t.data.size() * sizeof(float));
+  return to_c(welvet::Status::Ok());
+}
+
 welvet_status welvet_rmsnorm_forward_f32(int32_t batch, int32_t seq, int32_t dim, double eps,
                                          int32_t dtype, int32_t /*backend*/, const float* gamma,
                                          const float* x, float* pre, float* post) {
@@ -145,6 +216,78 @@ welvet_status welvet_rmsnorm_forward_f32(int32_t batch, int32_t seq, int32_t dim
   if (!st) return to_c(st);
   std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
   std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
+  return to_c(welvet::Status::Ok());
+}
+
+welvet_status welvet_rmsnorm_normalbp_f32(int32_t batch, int32_t seq, int32_t dim, double eps,
+                                          int32_t dtype, int32_t /*backend*/, const float* gamma_init,
+                                          const float* x, const float* grad_or_target,
+                                          int32_t use_target, double lr, float* pre, float* post,
+                                          float* dX, float* dW, float* gamma_after, double* loss) {
+  if (batch <= 0 || seq <= 0 || dim <= 0 || !gamma_init || !x || !grad_or_target || !pre || !post ||
+      !dX || !dW || !gamma_after || !loss) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "rmsnorm nbp: invalid argument");
+    return st;
+  }
+  if (dtype < 0 || dtype >= welvet::kNumDTypes) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "rmsnorm nbp: bad dtype %d", dtype);
+    return st;
+  }
+  if (auto st = welvet::cuda::init_default_device(); !st) return to_c(st);
+
+  welvet::rmsnorm::Config cfg;
+  cfg.dim = dim;
+  cfg.eps = eps;
+  welvet::rmsnorm::Layer layer;
+  auto st = welvet::rmsnorm::new_configured(cfg, static_cast<welvet::DType>(dtype), gamma_init, &layer);
+  if (!st) return to_c(st);
+
+  welvet::TensorF32 input;
+  if (seq == 1) {
+    input.shape = {batch, dim};
+  } else {
+    input.shape = {batch, seq, dim};
+  }
+  const std::size_t n = static_cast<std::size_t>(batch) * static_cast<std::size_t>(seq) *
+                        static_cast<std::size_t>(dim);
+  input.data.assign(x, x + n);
+
+  welvet::TensorF32 pre_t, post_t;
+  st = welvet::rmsnorm::forward(layer, input, &pre_t, &post_t);
+  if (!st) return to_c(st);
+
+  welvet::TensorF32 gy;
+  gy.shape = post_t.shape;
+  gy.data.assign(grad_or_target, grad_or_target + n);
+  *loss = 0.0;
+  if (use_target) {
+    st = welvet::runtime::training::mse(post_t, gy, loss);
+    if (!st) return to_c(st);
+    welvet::TensorF32 gtmp;
+    st = welvet::runtime::training::mse_grad(post_t, gy, &gtmp);
+    if (!st) return to_c(st);
+    gy = std::move(gtmp);
+  }
+
+  welvet::TensorF32 dx_t, dw_t;
+  st = welvet::rmsnorm::backward_f32(layer, gy, input, pre_t, &dx_t, &dw_t);
+  if (!st) return to_c(st);
+
+  if (lr != 0.0) {
+    st = welvet::rmsnorm::apply_grad_sgd(&layer, dw_t, lr);
+    if (!st) return to_c(st);
+  }
+  st = layer.gamma.export_f32(gamma_after);
+  if (!st) return to_c(st);
+
+  std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
+  std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
+  std::memcpy(dX, dx_t.data.data(), dx_t.data.size() * sizeof(float));
+  std::memcpy(dW, dw_t.data.data(), dw_t.data.size() * sizeof(float));
   return to_c(welvet::Status::Ok());
 }
 
@@ -182,6 +325,83 @@ welvet_status welvet_layernorm_forward_f32(int32_t batch, int32_t seq, int32_t d
   if (!st) return to_c(st);
   std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
   std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
+  return to_c(welvet::Status::Ok());
+}
+
+welvet_status welvet_layernorm_normalbp_f32(int32_t batch, int32_t seq, int32_t dim, double eps,
+                                            int32_t dtype, int32_t /*backend*/,
+                                            const float* gamma_init, const float* beta_init,
+                                            const float* x, const float* grad_or_target,
+                                            int32_t use_target, double lr, float* pre, float* post,
+                                            float* dX, float* dW, float* gamma_after,
+                                            float* beta_after, double* loss) {
+  if (batch <= 0 || seq <= 0 || dim <= 0 || !gamma_init || !beta_init || !x || !grad_or_target ||
+      !pre || !post || !dX || !dW || !gamma_after || !beta_after || !loss) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "layernorm nbp: invalid argument");
+    return st;
+  }
+  if (dtype < 0 || dtype >= welvet::kNumDTypes) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "layernorm nbp: bad dtype %d", dtype);
+    return st;
+  }
+  if (auto st = welvet::cuda::init_default_device(); !st) return to_c(st);
+
+  welvet::layernorm::Config cfg;
+  cfg.dim = dim;
+  cfg.eps = eps;
+  welvet::layernorm::Layer layer;
+  auto st = welvet::layernorm::new_configured(cfg, static_cast<welvet::DType>(dtype), gamma_init,
+                                              beta_init, &layer);
+  if (!st) return to_c(st);
+
+  welvet::TensorF32 input;
+  if (seq == 1) {
+    input.shape = {batch, dim};
+  } else {
+    input.shape = {batch, seq, dim};
+  }
+  const std::size_t n = static_cast<std::size_t>(batch) * static_cast<std::size_t>(seq) *
+                        static_cast<std::size_t>(dim);
+  input.data.assign(x, x + n);
+
+  welvet::TensorF32 pre_t, post_t;
+  st = welvet::layernorm::forward(layer, input, &pre_t, &post_t);
+  if (!st) return to_c(st);
+
+  welvet::TensorF32 gy;
+  gy.shape = post_t.shape;
+  gy.data.assign(grad_or_target, grad_or_target + n);
+  *loss = 0.0;
+  if (use_target) {
+    st = welvet::runtime::training::mse(post_t, gy, loss);
+    if (!st) return to_c(st);
+    welvet::TensorF32 gtmp;
+    st = welvet::runtime::training::mse_grad(post_t, gy, &gtmp);
+    if (!st) return to_c(st);
+    gy = std::move(gtmp);
+  }
+
+  welvet::TensorF32 dx_t, dw_t;
+  st = welvet::layernorm::backward_f32(layer, gy, input, pre_t, &dx_t, &dw_t);
+  if (!st) return to_c(st);
+
+  if (lr != 0.0) {
+    st = welvet::layernorm::apply_grad_sgd(&layer, dw_t, lr);
+    if (!st) return to_c(st);
+  }
+  st = layer.gamma.export_f32(gamma_after);
+  if (!st) return to_c(st);
+  st = layer.beta.export_f32(beta_after);
+  if (!st) return to_c(st);
+
+  std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
+  std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
+  std::memcpy(dX, dx_t.data.data(), dx_t.data.size() * sizeof(float));
+  std::memcpy(dW, dw_t.data.data(), dw_t.data.size() * sizeof(float));
   return to_c(welvet::Status::Ok());
 }
 
@@ -237,6 +457,89 @@ welvet_status welvet_softmax_forward_f32(int32_t n, int32_t dim, int32_t seq_len
   return to_c(welvet::Status::Ok());
 }
 
+welvet_status welvet_softmax_normalbp_f32(int32_t n, int32_t dim, int32_t seq_len, int32_t kind,
+                                          int32_t rows, int32_t cols, double temperature,
+                                          double entmax_alpha, int32_t gumbel_seed, int32_t dtype,
+                                          int32_t /*backend*/, int32_t rank, const int32_t* shape,
+                                          const uint8_t* mask, int32_t mask_len, const int32_t* hier,
+                                          int32_t hier_len, const float* x,
+                                          const float* grad_or_target, int32_t use_target, double lr,
+                                          float* pre, float* post, float* dX, double* loss) {
+  if (n <= 0 || dim <= 0 || !x || !grad_or_target || !pre || !post || !dX || !loss || rank < 1 ||
+      !shape) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "softmax nbp: invalid argument");
+    return st;
+  }
+  if (auto st = welvet::cuda::init_default_device(); !st) return to_c(st);
+  (void)lr;
+
+  welvet::softmax::Config cfg;
+  cfg.dim = dim;
+  cfg.seq_len = seq_len <= 0 ? 1 : seq_len;
+  cfg.rows = rows;
+  cfg.cols = cols;
+  cfg.temperature = temperature;
+  cfg.kind = static_cast<welvet::softmax::Kind>(kind);
+  cfg.entmax_alpha = entmax_alpha;
+  cfg.gumbel_seed = static_cast<uint32_t>(gumbel_seed);
+  if (mask && mask_len > 0) {
+    cfg.mask.resize(static_cast<std::size_t>(mask_len));
+    for (int32_t i = 0; i < mask_len; ++i) {
+      cfg.mask[static_cast<std::size_t>(i)] = mask[i] != 0;
+    }
+  }
+  if (hier && hier_len > 0) {
+    cfg.hierarchy_levels.assign(hier, hier + hier_len);
+  }
+  welvet::softmax::Layer layer;
+  auto st = welvet::softmax::new_configured(cfg, static_cast<welvet::DType>(dtype), &layer);
+  if (!st) return to_c(st);
+
+  welvet::TensorF32 input;
+  input.shape.assign(shape, shape + rank);
+  input.data.assign(x, x + static_cast<std::size_t>(n));
+
+  welvet::TensorF32 pre_t, post_t;
+  st = welvet::softmax::forward(layer, input, &pre_t, &post_t);
+  if (!st) return to_c(st);
+
+  welvet::TensorF32 gy;
+  gy.shape = post_t.shape;
+  gy.data.assign(grad_or_target, grad_or_target + static_cast<std::size_t>(n));
+  *loss = 0.0;
+  if (use_target) {
+    st = welvet::runtime::training::mse(post_t, gy, loss);
+    if (!st) return to_c(st);
+    welvet::TensorF32 gtmp;
+    st = welvet::runtime::training::mse_grad(post_t, gy, &gtmp);
+    if (!st) return to_c(st);
+    gy = std::move(gtmp);
+  }
+
+  welvet::TensorF32 dx_t, dw_t;
+  st = welvet::softmax::backward_f32(layer, gy, input, pre_t, &dx_t, &dw_t);
+  if (!st) return to_c(st);
+
+  if (lr != 0.0) {
+    st = welvet::softmax::apply_grad_sgd(&layer, dw_t, lr);
+    if (!st) return to_c(st);
+  }
+
+  if (static_cast<int>(pre_t.data.size()) != n || static_cast<int>(post_t.data.size()) != n ||
+      static_cast<int>(dx_t.data.size()) != n) {
+    welvet_status err{};
+    err.code = 1;
+    std::snprintf(err.message, sizeof(err.message), "softmax nbp: unexpected out len");
+    return err;
+  }
+  std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
+  std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
+  std::memcpy(dX, dx_t.data.data(), dx_t.data.size() * sizeof(float));
+  return to_c(welvet::Status::Ok());
+}
+
 welvet_status welvet_swiglu_forward_f32(int32_t batch, int32_t seq, int32_t input_dim,
                                         int32_t intermediate_dim, int32_t dtype, int32_t /*backend*/,
                                         const float* Gate, const float* Up, const float* Down,
@@ -272,6 +575,81 @@ welvet_status welvet_swiglu_forward_f32(int32_t batch, int32_t seq, int32_t inpu
   if (!st) return to_c(st);
   std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
   std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
+  return to_c(welvet::Status::Ok());
+}
+
+welvet_status welvet_swiglu_normalbp_f32(int32_t batch, int32_t seq, int32_t input_dim,
+                                         int32_t intermediate_dim, int32_t dtype, int32_t /*backend*/,
+                                         const float* Gate, const float* Up, const float* Down,
+                                         const float* x, const float* grad_or_target,
+                                         int32_t use_target, double lr, float* pre, float* post,
+                                         float* dX, float* dW, float* W_after, double* loss) {
+  if (batch <= 0 || seq <= 0 || input_dim <= 0 || intermediate_dim <= 0 || !Gate || !Up || !Down ||
+      !x || !grad_or_target || !pre || !post || !dX || !dW || !W_after || !loss) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "swiglu nbp: invalid argument");
+    return st;
+  }
+  if (dtype < 0 || dtype >= welvet::kNumDTypes) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "swiglu nbp: bad dtype %d", dtype);
+    return st;
+  }
+  if (auto st = welvet::cuda::init_default_device(); !st) return to_c(st);
+
+  welvet::swiglu::Config cfg;
+  cfg.input_dim = input_dim;
+  cfg.intermediate_dim = intermediate_dim;
+
+  welvet::swiglu::Layer layer;
+  auto st = welvet::swiglu::new_configured(cfg, static_cast<welvet::DType>(dtype), Gate, Up, Down,
+                                           &layer);
+  if (!st) return to_c(st);
+
+  welvet::TensorF32 input;
+  if (seq == 1) {
+    input.shape = {batch, input_dim};
+  } else {
+    input.shape = {batch, seq, input_dim};
+  }
+  const std::size_t n = static_cast<std::size_t>(batch) * static_cast<std::size_t>(seq) *
+                        static_cast<std::size_t>(input_dim);
+  input.data.assign(x, x + n);
+
+  welvet::TensorF32 pre_t, post_t;
+  st = welvet::swiglu::forward(layer, input, &pre_t, &post_t);
+  if (!st) return to_c(st);
+
+  welvet::TensorF32 gy;
+  gy.shape = post_t.shape;
+  gy.data.assign(grad_or_target, grad_or_target + n);
+  *loss = 0.0;
+  if (use_target) {
+    st = welvet::runtime::training::mse(post_t, gy, loss);
+    if (!st) return to_c(st);
+    welvet::TensorF32 gtmp;
+    st = welvet::runtime::training::mse_grad(post_t, gy, &gtmp);
+    if (!st) return to_c(st);
+    gy = std::move(gtmp);
+  }
+
+  welvet::TensorF32 dx_t, dw_t;
+  st = welvet::swiglu::backward_f32(layer, gy, input, pre_t, &dx_t, &dw_t);
+  if (!st) return to_c(st);
+
+  if (lr != 0.0) {
+    st = welvet::swiglu::apply_grad_sgd(&layer, dw_t, lr);
+    if (!st) return to_c(st);
+  }
+  st = welvet::swiglu::export_weights_f32(layer, W_after);
+  if (!st) return to_c(st);
+
+  std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
+  std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
+  std::memcpy(dX, dx_t.data.data(), dx_t.data.size() * sizeof(float));
+  std::memcpy(dW, dw_t.data.data(), dw_t.data.size() * sizeof(float));
   return to_c(welvet::Status::Ok());
 }
 
@@ -319,6 +697,91 @@ welvet_status welvet_embedding_forward_f32(int32_t batch, int32_t vocab, int32_t
   return to_c(welvet::Status::Ok());
 }
 
+welvet_status welvet_embedding_normalbp_f32(int32_t batch, int32_t vocab, int32_t emb,
+                                            int32_t seq_len, int32_t in_rank, int32_t in_last,
+                                            int32_t act, int32_t dtype, int32_t /*backend*/,
+                                            const float* W_init, const float* x,
+                                            const float* grad_or_target, int32_t use_target,
+                                            double lr, float* pre, float* post, float* dX,
+                                            float* dW, float* W_after, double* loss) {
+  if (batch <= 0 || vocab <= 0 || emb <= 0 || seq_len <= 0 || in_last <= 0 || !W_init || !x ||
+      !grad_or_target || !pre || !post || !dX || !dW || !W_after || !loss) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "embedding nbp: invalid argument");
+    return st;
+  }
+  if (in_rank < 1 || in_rank > 3) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "embedding nbp: bad in_rank");
+    return st;
+  }
+  if (dtype < 0 || dtype >= welvet::kNumDTypes) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "embedding nbp: bad dtype %d", dtype);
+    return st;
+  }
+  if (auto st = welvet::cuda::init_default_device(); !st) return to_c(st);
+
+  welvet::embedding::Config cfg;
+  cfg.vocab_size = vocab;
+  cfg.embedding_dim = emb;
+  cfg.seq_len = seq_len;
+  welvet::embedding::Layer layer;
+  auto st = welvet::embedding::new_configured(cfg, static_cast<welvet::DType>(dtype),
+                                              static_cast<welvet::Activation>(act), W_init, &layer);
+  if (!st) return to_c(st);
+
+  welvet::TensorF32 input;
+  if (in_rank == 1) {
+    input.shape = {seq_len};
+  } else if (in_rank == 2) {
+    input.shape = {batch, seq_len};
+  } else {
+    input.shape = {batch, seq_len, in_last};
+  }
+  const std::size_t x_n = static_cast<std::size_t>(batch) * static_cast<std::size_t>(seq_len) *
+                          static_cast<std::size_t>(in_last);
+  input.data.assign(x, x + x_n);
+
+  welvet::TensorF32 pre_t, post_t;
+  st = welvet::embedding::forward(layer, input, &pre_t, &post_t);
+  if (!st) return to_c(st);
+
+  const std::size_t out_n = post_t.data.size();
+  welvet::TensorF32 gy;
+  gy.shape = post_t.shape;
+  gy.data.assign(grad_or_target, grad_or_target + out_n);
+  *loss = 0.0;
+  if (use_target) {
+    st = welvet::runtime::training::mse(post_t, gy, loss);
+    if (!st) return to_c(st);
+    welvet::TensorF32 gtmp;
+    st = welvet::runtime::training::mse_grad(post_t, gy, &gtmp);
+    if (!st) return to_c(st);
+    gy = std::move(gtmp);
+  }
+
+  welvet::TensorF32 dx_t, dw_t;
+  st = welvet::embedding::backward_f32(layer, gy, input, pre_t, &dx_t, &dw_t);
+  if (!st) return to_c(st);
+
+  if (lr != 0.0) {
+    st = welvet::embedding::apply_grad_sgd(&layer, dw_t, lr);
+    if (!st) return to_c(st);
+  }
+  st = layer.weights.export_f32(W_after);
+  if (!st) return to_c(st);
+
+  std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
+  std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
+  std::memcpy(dX, dx_t.data.data(), dx_t.data.size() * sizeof(float));
+  std::memcpy(dW, dw_t.data.data(), dw_t.data.size() * sizeof(float));
+  return to_c(welvet::Status::Ok());
+}
+
 welvet_status welvet_mha_forward_f32(int32_t batch, int32_t seq, int32_t d_model, int32_t num_heads,
                                      int32_t num_kv_heads, int32_t head_dim, int32_t max_seq_len,
                                      int32_t mask, int32_t pos, int32_t dtype, int32_t /*backend*/,
@@ -357,6 +820,84 @@ welvet_status welvet_mha_forward_f32(int32_t batch, int32_t seq, int32_t d_model
   if (!st) return to_c(st);
   std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
   std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
+  return to_c(welvet::Status::Ok());
+}
+
+welvet_status welvet_mha_normalbp_f32(int32_t batch, int32_t seq, int32_t d_model, int32_t num_heads,
+                                      int32_t num_kv_heads, int32_t head_dim, int32_t max_seq_len,
+                                      int32_t mask, int32_t pos, int32_t dtype, int32_t /*backend*/,
+                                      const float* Q, const float* K, const float* V, const float* O,
+                                      const float* x, const float* grad_or_target, int32_t use_target,
+                                      double lr, float* pre, float* post, float* dX, float* dW,
+                                      float* W_after, double* loss) {
+  if (batch <= 0 || seq <= 0 || d_model <= 0 || num_heads <= 0 || !Q || !K || !V || !O || !x ||
+      !grad_or_target || !pre || !post || !dX || !dW || !W_after || !loss) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "mha nbp: invalid argument");
+    return st;
+  }
+  if (dtype < 0 || dtype >= welvet::kNumDTypes) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "mha nbp: bad dtype %d", dtype);
+    return st;
+  }
+  if (auto st = welvet::cuda::init_default_device(); !st) return to_c(st);
+
+  welvet::mha::Config cfg;
+  cfg.d_model = d_model;
+  cfg.num_heads = num_heads;
+  cfg.num_kv_heads = num_kv_heads;
+  cfg.head_dim = head_dim;
+  cfg.max_seq_len = max_seq_len;
+  cfg.mask = static_cast<welvet::mha::MaskKind>(mask);
+  cfg.pos = static_cast<welvet::mha::PosKind>(pos);
+  cfg.mode = welvet::mha::AttnMode::Self;
+  cfg.causal = (cfg.mask == welvet::mha::MaskKind::Causal);
+
+  welvet::mha::Layer layer;
+  auto st = welvet::mha::new_configured(cfg, static_cast<welvet::DType>(dtype), Q, K, V, O, &layer);
+  if (!st) return to_c(st);
+
+  welvet::TensorF32 input;
+  input.shape = {batch, seq, d_model};
+  const std::size_t n = static_cast<std::size_t>(batch) * static_cast<std::size_t>(seq) *
+                        static_cast<std::size_t>(d_model);
+  input.data.assign(x, x + n);
+
+  welvet::TensorF32 pre_t, post_t;
+  st = welvet::mha::forward(layer, input, &pre_t, &post_t);
+  if (!st) return to_c(st);
+
+  welvet::TensorF32 gy;
+  gy.shape = post_t.shape;
+  gy.data.assign(grad_or_target, grad_or_target + n);
+  *loss = 0.0;
+  if (use_target) {
+    st = welvet::runtime::training::mse(post_t, gy, loss);
+    if (!st) return to_c(st);
+    welvet::TensorF32 gtmp;
+    st = welvet::runtime::training::mse_grad(post_t, gy, &gtmp);
+    if (!st) return to_c(st);
+    gy = std::move(gtmp);
+  }
+
+  welvet::TensorF32 dx_t, dw_t;
+  st = welvet::mha::backward_f32(layer, gy, input, pre_t, &dx_t, &dw_t);
+  if (!st) return to_c(st);
+
+  if (lr != 0.0) {
+    st = welvet::mha::apply_grad_sgd(&layer, dw_t, lr);
+    if (!st) return to_c(st);
+  }
+  st = welvet::mha::export_weights_f32(layer, W_after);
+  if (!st) return to_c(st);
+
+  std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
+  std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
+  std::memcpy(dX, dx_t.data.data(), dx_t.data.size() * sizeof(float));
+  std::memcpy(dW, dw_t.data.data(), dw_t.data.size() * sizeof(float));
   return to_c(welvet::Status::Ok());
 }
 
@@ -613,6 +1154,426 @@ welvet_status welvet_convt3_forward_f32(int32_t batch, int32_t in_c, int32_t fil
   return to_c(welvet::Status::Ok());
 }
 
+welvet_status welvet_cnn1_normalbp_f32(int32_t batch, int32_t in_c, int32_t filters, int32_t seq_len,
+                                       int32_t kernel, int32_t stride, int32_t padding, int32_t act,
+                                       int32_t dtype, int32_t backend, const float* W,
+                                       const double* bias, size_t bias_len, const float* x,
+                                       const float* grad_or_target, int32_t use_target, double lr,
+                                       float* pre, float* post, float* dX, float* dW, float* W_after,
+                                       double* loss) {
+  if (batch <= 0 || in_c <= 0 || filters <= 0 || seq_len <= 0 || kernel <= 0 || !W || !x ||
+      !grad_or_target || !pre || !post || !dX || !dW || !W_after || !loss) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "cnn1 nbp: invalid argument");
+    return st;
+  }
+  if (auto st = welvet::cuda::init_default_device(); !st) return to_c(st);
+
+  welvet::cnn1::Config cfg;
+  cfg.in_channels = in_c;
+  cfg.filters = filters;
+  cfg.seq_len = seq_len;
+  cfg.kernel = kernel;
+  cfg.stride = stride;
+  cfg.padding = padding;
+  cfg.activation = static_cast<welvet::Activation>(act);
+  welvet::cnn1::Layer layer;
+  auto st = welvet::cnn1::new_configured(cfg, static_cast<welvet::DType>(dtype), W, &layer);
+  if (!st) return to_c(st);
+  if (bias && bias_len > 0) {
+    layer.proj.weights.bias.assign(bias, bias + bias_len);
+  }
+  
+  welvet::TensorF32 input;
+  input.shape = {batch, in_c, seq_len};
+  const std::size_t nx = static_cast<std::size_t>(batch) * static_cast<std::size_t>(in_c) *
+                         static_cast<std::size_t>(seq_len);
+  input.data.assign(x, x + nx);
+
+  welvet::TensorF32 pre_t, post_t;
+  st = welvet::cnn1::forward(layer, input, &pre_t, &post_t);
+  if (!st) return to_c(st);
+
+  const std::size_t nout = post_t.data.size();
+  welvet::TensorF32 gy;
+  gy.shape = post_t.shape;
+  gy.data.assign(grad_or_target, grad_or_target + nout);
+  *loss = 0.0;
+  if (use_target) {
+    st = welvet::runtime::training::mse(post_t, gy, loss);
+    if (!st) return to_c(st);
+    welvet::TensorF32 gtmp;
+    st = welvet::runtime::training::mse_grad(post_t, gy, &gtmp);
+    if (!st) return to_c(st);
+    gy = std::move(gtmp);
+  }
+
+  welvet::TensorF32 dx_t, dw_t;
+  st = welvet::cnn1::backward_f32(layer, gy, input, pre_t, &dx_t, &dw_t);
+  if (!st) return to_c(st);
+  if (lr != 0.0) {
+    st = welvet::cnn1::apply_grad_sgd(&layer, dw_t, lr);
+    if (!st) return to_c(st);
+  }
+  st = welvet::cnn1::export_weights_f32(layer, W_after);
+  if (!st) return to_c(st);
+
+  std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
+  std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
+  std::memcpy(dX, dx_t.data.data(), dx_t.data.size() * sizeof(float));
+  std::memcpy(dW, dw_t.data.data(), dw_t.data.size() * sizeof(float));
+  return to_c(welvet::Status::Ok());
+}
+
+welvet_status welvet_cnn2_normalbp_f32(int32_t batch, int32_t in_c, int32_t filters, int32_t height,
+                                       int32_t width, int32_t kernel, int32_t stride, int32_t padding,
+                                       int32_t act, int32_t dtype, int32_t backend, const float* W,
+                                       const double* bias, size_t bias_len, const float* x,
+                                       const float* grad_or_target, int32_t use_target, double lr,
+                                       float* pre, float* post, float* dX, float* dW, float* W_after,
+                                       double* loss) {
+  if (batch <= 0 || in_c <= 0 || filters <= 0 || height <= 0 || width <= 0 || kernel <= 0 || !W ||
+      !x || !grad_or_target || !pre || !post || !dX || !dW || !W_after || !loss) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "cnn2 nbp: invalid argument");
+    return st;
+  }
+  if (auto st = welvet::cuda::init_default_device(); !st) return to_c(st);
+
+  welvet::cnn2::Config cfg;
+  cfg.in_channels = in_c;
+  cfg.filters = filters;
+  cfg.height = height;
+  cfg.width = width;
+  cfg.kernel = kernel;
+  cfg.stride = stride;
+  cfg.padding = padding;
+  cfg.activation = static_cast<welvet::Activation>(act);
+  welvet::cnn2::Layer layer;
+  auto st = welvet::cnn2::new_configured(cfg, static_cast<welvet::DType>(dtype), W, &layer);
+  if (!st) return to_c(st);
+  if (bias && bias_len > 0) {
+    layer.proj.weights.bias.assign(bias, bias + bias_len);
+  }
+  
+  welvet::TensorF32 input;
+  input.shape = {batch, in_c, height, width};
+  const std::size_t nx = static_cast<std::size_t>(batch) * static_cast<std::size_t>(in_c) *
+                         static_cast<std::size_t>(height) * static_cast<std::size_t>(width);
+  input.data.assign(x, x + nx);
+
+  welvet::TensorF32 pre_t, post_t;
+  st = welvet::cnn2::forward(layer, input, &pre_t, &post_t);
+  if (!st) return to_c(st);
+
+  const std::size_t nout = post_t.data.size();
+  welvet::TensorF32 gy;
+  gy.shape = post_t.shape;
+  gy.data.assign(grad_or_target, grad_or_target + nout);
+  *loss = 0.0;
+  if (use_target) {
+    st = welvet::runtime::training::mse(post_t, gy, loss);
+    if (!st) return to_c(st);
+    welvet::TensorF32 gtmp;
+    st = welvet::runtime::training::mse_grad(post_t, gy, &gtmp);
+    if (!st) return to_c(st);
+    gy = std::move(gtmp);
+  }
+
+  welvet::TensorF32 dx_t, dw_t;
+  st = welvet::cnn2::backward_f32(layer, gy, input, pre_t, &dx_t, &dw_t);
+  if (!st) return to_c(st);
+  if (lr != 0.0) {
+    st = welvet::cnn2::apply_grad_sgd(&layer, dw_t, lr);
+    if (!st) return to_c(st);
+  }
+  st = welvet::cnn2::export_weights_f32(layer, W_after);
+  if (!st) return to_c(st);
+
+  std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
+  std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
+  std::memcpy(dX, dx_t.data.data(), dx_t.data.size() * sizeof(float));
+  std::memcpy(dW, dw_t.data.data(), dw_t.data.size() * sizeof(float));
+  return to_c(welvet::Status::Ok());
+}
+
+welvet_status welvet_cnn3_normalbp_f32(int32_t batch, int32_t in_c, int32_t filters, int32_t depth,
+                                       int32_t height, int32_t width, int32_t kernel, int32_t stride,
+                                       int32_t padding, int32_t act, int32_t dtype, int32_t backend,
+                                       const float* W, const double* bias, size_t bias_len,
+                                       const float* x, const float* grad_or_target,
+                                       int32_t use_target, double lr, float* pre, float* post,
+                                       float* dX, float* dW, float* W_after, double* loss) {
+  if (batch <= 0 || in_c <= 0 || filters <= 0 || depth <= 0 || height <= 0 || width <= 0 ||
+      kernel <= 0 || !W || !x || !grad_or_target || !pre || !post || !dX || !dW || !W_after ||
+      !loss) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "cnn3 nbp: invalid argument");
+    return st;
+  }
+  if (auto st = welvet::cuda::init_default_device(); !st) return to_c(st);
+
+  welvet::cnn3::Config cfg;
+  cfg.in_channels = in_c;
+  cfg.filters = filters;
+  cfg.depth = depth;
+  cfg.height = height;
+  cfg.width = width;
+  cfg.kernel = kernel;
+  cfg.stride = stride;
+  cfg.padding = padding;
+  cfg.activation = static_cast<welvet::Activation>(act);
+  welvet::cnn3::Layer layer;
+  auto st = welvet::cnn3::new_configured(cfg, static_cast<welvet::DType>(dtype), W, &layer);
+  if (!st) return to_c(st);
+  if (bias && bias_len > 0) {
+    layer.proj.weights.bias.assign(bias, bias + bias_len);
+  }
+  
+  welvet::TensorF32 input;
+  input.shape = {batch, in_c, depth, height, width};
+  const std::size_t nx = static_cast<std::size_t>(batch) * static_cast<std::size_t>(in_c) *
+                         static_cast<std::size_t>(depth) * static_cast<std::size_t>(height) *
+                         static_cast<std::size_t>(width);
+  input.data.assign(x, x + nx);
+
+  welvet::TensorF32 pre_t, post_t;
+  st = welvet::cnn3::forward(layer, input, &pre_t, &post_t);
+  if (!st) return to_c(st);
+
+  const std::size_t nout = post_t.data.size();
+  welvet::TensorF32 gy;
+  gy.shape = post_t.shape;
+  gy.data.assign(grad_or_target, grad_or_target + nout);
+  *loss = 0.0;
+  if (use_target) {
+    st = welvet::runtime::training::mse(post_t, gy, loss);
+    if (!st) return to_c(st);
+    welvet::TensorF32 gtmp;
+    st = welvet::runtime::training::mse_grad(post_t, gy, &gtmp);
+    if (!st) return to_c(st);
+    gy = std::move(gtmp);
+  }
+
+  welvet::TensorF32 dx_t, dw_t;
+  st = welvet::cnn3::backward_f32(layer, gy, input, pre_t, &dx_t, &dw_t);
+  if (!st) return to_c(st);
+  if (lr != 0.0) {
+    st = welvet::cnn3::apply_grad_sgd(&layer, dw_t, lr);
+    if (!st) return to_c(st);
+  }
+  st = welvet::cnn3::export_weights_f32(layer, W_after);
+  if (!st) return to_c(st);
+
+  std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
+  std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
+  std::memcpy(dX, dx_t.data.data(), dx_t.data.size() * sizeof(float));
+  std::memcpy(dW, dw_t.data.data(), dw_t.data.size() * sizeof(float));
+  return to_c(welvet::Status::Ok());
+}
+
+welvet_status welvet_convt1_normalbp_f32(int32_t batch, int32_t in_c, int32_t filters, int32_t seq_len,
+                                         int32_t kernel, int32_t stride, int32_t padding,
+                                         int32_t output_padding, int32_t act, int32_t dtype,
+                                         int32_t backend, const float* W, const float* x,
+                                         const float* grad_or_target, int32_t use_target, double lr,
+                                         float* pre, float* post, float* dX, float* dW,
+                                         float* W_after, double* loss) {
+  if (batch <= 0 || in_c <= 0 || filters <= 0 || seq_len <= 0 || kernel <= 0 || !W || !x ||
+      !grad_or_target || !pre || !post || !dX || !dW || !W_after || !loss) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "convt1 nbp: invalid argument");
+    return st;
+  }
+  if (auto st = welvet::cuda::init_default_device(); !st) return to_c(st);
+
+  welvet::convt1::Config cfg;
+  cfg.in_channels = in_c;
+  cfg.filters = filters;
+  cfg.seq_len = seq_len;
+  cfg.kernel = kernel;
+  cfg.stride = stride;
+  cfg.padding = padding;
+  cfg.output_padding = output_padding;
+  cfg.activation = static_cast<welvet::Activation>(act);
+  welvet::convt1::Layer layer;
+  auto st = welvet::convt1::new_configured(cfg, static_cast<welvet::DType>(dtype), W, &layer);
+  if (!st) return to_c(st);
+    welvet::TensorF32 input;
+  input.shape = {batch, in_c, seq_len};
+  const std::size_t nx = static_cast<std::size_t>(batch) * static_cast<std::size_t>(in_c) *
+                         static_cast<std::size_t>(seq_len);
+  input.data.assign(x, x + nx);
+  welvet::TensorF32 pre_t, post_t;
+  st = welvet::convt1::forward(layer, input, &pre_t, &post_t);
+  if (!st) return to_c(st);
+  const std::size_t nout = post_t.data.size();
+  welvet::TensorF32 gy;
+  gy.shape = post_t.shape;
+  gy.data.assign(grad_or_target, grad_or_target + nout);
+  *loss = 0.0;
+  if (use_target) {
+    st = welvet::runtime::training::mse(post_t, gy, loss);
+    if (!st) return to_c(st);
+    welvet::TensorF32 gtmp;
+    st = welvet::runtime::training::mse_grad(post_t, gy, &gtmp);
+    if (!st) return to_c(st);
+    gy = std::move(gtmp);
+  }
+  welvet::TensorF32 dx_t, dw_t;
+  st = welvet::convt1::backward_f32(layer, gy, input, pre_t, &dx_t, &dw_t);
+  if (!st) return to_c(st);
+  if (lr != 0.0) {
+    st = welvet::convt1::apply_grad_sgd(&layer, dw_t, lr);
+    if (!st) return to_c(st);
+  }
+  st = welvet::convt1::export_weights_f32(layer, W_after);
+  if (!st) return to_c(st);
+  std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
+  std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
+  std::memcpy(dX, dx_t.data.data(), dx_t.data.size() * sizeof(float));
+  std::memcpy(dW, dw_t.data.data(), dw_t.data.size() * sizeof(float));
+  return to_c(welvet::Status::Ok());
+}
+
+welvet_status welvet_convt2_normalbp_f32(int32_t batch, int32_t in_c, int32_t filters, int32_t height,
+                                         int32_t width, int32_t kernel, int32_t stride,
+                                         int32_t padding, int32_t output_padding, int32_t act,
+                                         int32_t dtype, int32_t backend, const float* W,
+                                         const float* x, const float* grad_or_target,
+                                         int32_t use_target, double lr, float* pre, float* post,
+                                         float* dX, float* dW, float* W_after, double* loss) {
+  if (batch <= 0 || in_c <= 0 || filters <= 0 || height <= 0 || width <= 0 || kernel <= 0 || !W ||
+      !x || !grad_or_target || !pre || !post || !dX || !dW || !W_after || !loss) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "convt2 nbp: invalid argument");
+    return st;
+  }
+  if (auto st = welvet::cuda::init_default_device(); !st) return to_c(st);
+
+  welvet::convt2::Config cfg;
+  cfg.in_channels = in_c;
+  cfg.filters = filters;
+  cfg.height = height;
+  cfg.width = width;
+  cfg.kernel = kernel;
+  cfg.stride = stride;
+  cfg.padding = padding;
+  cfg.output_padding = output_padding;
+  cfg.activation = static_cast<welvet::Activation>(act);
+  welvet::convt2::Layer layer;
+  auto st = welvet::convt2::new_configured(cfg, static_cast<welvet::DType>(dtype), W, &layer);
+  if (!st) return to_c(st);
+    welvet::TensorF32 input;
+  input.shape = {batch, in_c, height, width};
+  const std::size_t nx = static_cast<std::size_t>(batch) * static_cast<std::size_t>(in_c) *
+                         static_cast<std::size_t>(height) * static_cast<std::size_t>(width);
+  input.data.assign(x, x + nx);
+  welvet::TensorF32 pre_t, post_t;
+  st = welvet::convt2::forward(layer, input, &pre_t, &post_t);
+  if (!st) return to_c(st);
+  const std::size_t nout = post_t.data.size();
+  welvet::TensorF32 gy;
+  gy.shape = post_t.shape;
+  gy.data.assign(grad_or_target, grad_or_target + nout);
+  *loss = 0.0;
+  if (use_target) {
+    st = welvet::runtime::training::mse(post_t, gy, loss);
+    if (!st) return to_c(st);
+    welvet::TensorF32 gtmp;
+    st = welvet::runtime::training::mse_grad(post_t, gy, &gtmp);
+    if (!st) return to_c(st);
+    gy = std::move(gtmp);
+  }
+  welvet::TensorF32 dx_t, dw_t;
+  st = welvet::convt2::backward_f32(layer, gy, input, pre_t, &dx_t, &dw_t);
+  if (!st) return to_c(st);
+  if (lr != 0.0) {
+    st = welvet::convt2::apply_grad_sgd(&layer, dw_t, lr);
+    if (!st) return to_c(st);
+  }
+  st = welvet::convt2::export_weights_f32(layer, W_after);
+  if (!st) return to_c(st);
+  std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
+  std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
+  std::memcpy(dX, dx_t.data.data(), dx_t.data.size() * sizeof(float));
+  std::memcpy(dW, dw_t.data.data(), dw_t.data.size() * sizeof(float));
+  return to_c(welvet::Status::Ok());
+}
+
+welvet_status welvet_convt3_normalbp_f32(int32_t batch, int32_t in_c, int32_t filters, int32_t depth,
+                                         int32_t height, int32_t width, int32_t kernel,
+                                         int32_t stride, int32_t padding, int32_t output_padding,
+                                         int32_t act, int32_t dtype, int32_t backend, const float* W,
+                                         const float* x, const float* grad_or_target,
+                                         int32_t use_target, double lr, float* pre, float* post,
+                                         float* dX, float* dW, float* W_after, double* loss) {
+  if (batch <= 0 || in_c <= 0 || filters <= 0 || depth <= 0 || height <= 0 || width <= 0 ||
+      kernel <= 0 || !W || !x || !grad_or_target || !pre || !post || !dX || !dW || !W_after ||
+      !loss) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "convt3 nbp: invalid argument");
+    return st;
+  }
+  if (auto st = welvet::cuda::init_default_device(); !st) return to_c(st);
+
+  welvet::convt3::Config cfg;
+  cfg.in_channels = in_c;
+  cfg.filters = filters;
+  cfg.depth = depth;
+  cfg.height = height;
+  cfg.width = width;
+  cfg.kernel = kernel;
+  cfg.stride = stride;
+  cfg.padding = padding;
+  cfg.output_padding = output_padding;
+  cfg.activation = static_cast<welvet::Activation>(act);
+  welvet::convt3::Layer layer;
+  auto st = welvet::convt3::new_configured(cfg, static_cast<welvet::DType>(dtype), W, &layer);
+  if (!st) return to_c(st);
+    welvet::TensorF32 input;
+  input.shape = {batch, in_c, depth, height, width};
+  const std::size_t nx = static_cast<std::size_t>(batch) * static_cast<std::size_t>(in_c) *
+                         static_cast<std::size_t>(depth) * static_cast<std::size_t>(height) *
+                         static_cast<std::size_t>(width);
+  input.data.assign(x, x + nx);
+  welvet::TensorF32 pre_t, post_t;
+  st = welvet::convt3::forward(layer, input, &pre_t, &post_t);
+  if (!st) return to_c(st);
+  const std::size_t nout = post_t.data.size();
+  welvet::TensorF32 gy;
+  gy.shape = post_t.shape;
+  gy.data.assign(grad_or_target, grad_or_target + nout);
+  *loss = 0.0;
+  if (use_target) {
+    st = welvet::runtime::training::mse(post_t, gy, loss);
+    if (!st) return to_c(st);
+    welvet::TensorF32 gtmp;
+    st = welvet::runtime::training::mse_grad(post_t, gy, &gtmp);
+    if (!st) return to_c(st);
+    gy = std::move(gtmp);
+  }
+  welvet::TensorF32 dx_t, dw_t;
+  st = welvet::convt3::backward_f32(layer, gy, input, pre_t, &dx_t, &dw_t);
+  if (!st) return to_c(st);
+  if (lr != 0.0) {
+    st = welvet::convt3::apply_grad_sgd(&layer, dw_t, lr);
+    if (!st) return to_c(st);
+  }
+  st = welvet::convt3::export_weights_f32(layer, W_after);
+  if (!st) return to_c(st);
+  std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
+  std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
+  std::memcpy(dX, dx_t.data.data(), dx_t.data.size() * sizeof(float));
+  std::memcpy(dW, dw_t.data.data(), dw_t.data.size() * sizeof(float));
+  return to_c(welvet::Status::Ok());
+}
 welvet_status welvet_rnn_forward_f32(int32_t batch, int32_t input_size, int32_t hidden_size,
                                      int32_t seq_len, int32_t dtype, int32_t /*backend*/,
                                      const float* packed, const float* x, float* pre, float* post) {
@@ -644,6 +1605,64 @@ welvet_status welvet_rnn_forward_f32(int32_t batch, int32_t input_size, int32_t 
   return to_c(welvet::Status::Ok());
 }
 
+welvet_status welvet_rnn_normalbp_f32(int32_t batch, int32_t input_size, int32_t hidden_size,
+                                     int32_t seq_len, int32_t dtype, int32_t /*backend*/,
+                                     const float* packed, const float* x,
+                                     const float* grad_or_target, int32_t use_target, double lr,
+                                     float* pre, float* post, float* dX, float* dW, float* W_after,
+                                     double* loss) {
+  if (batch <= 0 || input_size <= 0 || hidden_size <= 0 || seq_len <= 0 || !packed || !x ||
+      !grad_or_target || !pre || !post || !dX || !dW || !W_after || !loss) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "rnn nbp: invalid argument");
+    return st;
+  }
+  if (auto st = welvet::cuda::init_default_device(); !st) return to_c(st);
+
+  welvet::rnn::Config cfg;
+  cfg.input_size = input_size;
+  cfg.hidden_size = hidden_size;
+  cfg.seq_len = seq_len;
+  welvet::rnn::Layer layer;
+  auto st = welvet::rnn::new_configured(cfg, static_cast<welvet::DType>(dtype), packed, &layer);
+  if (!st) return to_c(st);
+
+  welvet::TensorF32 input;
+  input.shape = {batch, seq_len, input_size};
+  input.data.assign(x, x + static_cast<std::size_t>(batch * seq_len * input_size));
+  welvet::TensorF32 pre_t, post_t;
+  st = welvet::rnn::forward(layer, input, &pre_t, &post_t);
+  if (!st) return to_c(st);
+  const std::size_t nout = post_t.data.size();
+  welvet::TensorF32 gy;
+  gy.shape = post_t.shape;
+  gy.data.assign(grad_or_target, grad_or_target + nout);
+  *loss = 0.0;
+  if (use_target) {
+    st = welvet::runtime::training::mse(post_t, gy, loss);
+    if (!st) return to_c(st);
+    welvet::TensorF32 gtmp;
+    st = welvet::runtime::training::mse_grad(post_t, gy, &gtmp);
+    if (!st) return to_c(st);
+    gy = std::move(gtmp);
+  }
+  welvet::TensorF32 dx_t, dw_t;
+  st = welvet::rnn::backward_f32(layer, gy, input, pre_t, &dx_t, &dw_t);
+  if (!st) return to_c(st);
+  if (lr != 0.0) {
+    st = welvet::rnn::apply_grad_sgd(&layer, dw_t, lr);
+    if (!st) return to_c(st);
+  }
+  st = welvet::rnn::export_packed_f32(layer, W_after);
+  if (!st) return to_c(st);
+  std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
+  std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
+  std::memcpy(dX, dx_t.data.data(), dx_t.data.size() * sizeof(float));
+  std::memcpy(dW, dw_t.data.data(), dw_t.data.size() * sizeof(float));
+  return to_c(welvet::Status::Ok());
+}
+
 welvet_status welvet_lstm_forward_f32(int32_t batch, int32_t input_size, int32_t hidden_size,
                                       int32_t seq_len, int32_t dtype, int32_t /*backend*/,
                                       const float* packed, const float* x, float* pre, float* post) {
@@ -672,6 +1691,64 @@ welvet_status welvet_lstm_forward_f32(int32_t batch, int32_t input_size, int32_t
   if (!st) return to_c(st);
   std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
   std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
+  return to_c(welvet::Status::Ok());
+}
+
+welvet_status welvet_lstm_normalbp_f32(int32_t batch, int32_t input_size, int32_t hidden_size,
+                                      int32_t seq_len, int32_t dtype, int32_t /*backend*/,
+                                      const float* packed, const float* x,
+                                      const float* grad_or_target, int32_t use_target, double lr,
+                                      float* pre, float* post, float* dX, float* dW, float* W_after,
+                                      double* loss) {
+  if (batch <= 0 || input_size <= 0 || hidden_size <= 0 || seq_len <= 0 || !packed || !x ||
+      !grad_or_target || !pre || !post || !dX || !dW || !W_after || !loss) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "lstm nbp: invalid argument");
+    return st;
+  }
+  if (auto st = welvet::cuda::init_default_device(); !st) return to_c(st);
+
+  welvet::lstm::Config cfg;
+  cfg.input_size = input_size;
+  cfg.hidden_size = hidden_size;
+  cfg.seq_len = seq_len;
+  welvet::lstm::Layer layer;
+  auto st = welvet::lstm::new_configured(cfg, static_cast<welvet::DType>(dtype), packed, &layer);
+  if (!st) return to_c(st);
+
+  welvet::TensorF32 input;
+  input.shape = {batch, seq_len, input_size};
+  input.data.assign(x, x + static_cast<std::size_t>(batch * seq_len * input_size));
+  welvet::TensorF32 pre_t, post_t;
+  st = welvet::lstm::forward(layer, input, &pre_t, &post_t);
+  if (!st) return to_c(st);
+  const std::size_t nout = post_t.data.size();
+  welvet::TensorF32 gy;
+  gy.shape = post_t.shape;
+  gy.data.assign(grad_or_target, grad_or_target + nout);
+  *loss = 0.0;
+  if (use_target) {
+    st = welvet::runtime::training::mse(post_t, gy, loss);
+    if (!st) return to_c(st);
+    welvet::TensorF32 gtmp;
+    st = welvet::runtime::training::mse_grad(post_t, gy, &gtmp);
+    if (!st) return to_c(st);
+    gy = std::move(gtmp);
+  }
+  welvet::TensorF32 dx_t, dw_t;
+  st = welvet::lstm::backward_f32(layer, gy, input, pre_t, &dx_t, &dw_t);
+  if (!st) return to_c(st);
+  if (lr != 0.0) {
+    st = welvet::lstm::apply_grad_sgd(&layer, dw_t, lr);
+    if (!st) return to_c(st);
+  }
+  st = welvet::lstm::export_packed_f32(layer, W_after);
+  if (!st) return to_c(st);
+  std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
+  std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
+  std::memcpy(dX, dx_t.data.data(), dx_t.data.size() * sizeof(float));
+  std::memcpy(dW, dw_t.data.data(), dw_t.data.size() * sizeof(float));
   return to_c(welvet::Status::Ok());
 }
 
@@ -712,6 +1789,70 @@ welvet_status welvet_sequential_forward_f32(int32_t batch, int32_t seq, int32_t 
   return to_c(welvet::Status::Ok());
 }
 
+welvet_status welvet_sequential_normalbp_f32(int32_t batch, int32_t seq, int32_t dim, int32_t depth,
+                                            int32_t child_act, int32_t dtype, int32_t /*backend*/,
+                                            const float* packed, const float* x,
+                                            const float* grad_or_target, int32_t use_target,
+                                            double lr, float* pre, float* post, float* dX, float* dW,
+                                            float* W_after, double* loss) {
+  if (batch <= 0 || seq <= 0 || dim <= 0 || depth <= 0 || !packed || !x || !grad_or_target || !pre ||
+      !post || !dX || !dW || !W_after || !loss) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "sequential nbp: invalid argument");
+    return st;
+  }
+  if (auto st = welvet::cuda::init_default_device(); !st) return to_c(st);
+
+  welvet::sequential::Config cfg;
+  cfg.dim = dim;
+  cfg.seq_len = seq;
+  cfg.depth = depth;
+  welvet::sequential::Layer layer;
+  auto st = welvet::sequential::new_configured(cfg, static_cast<welvet::DType>(dtype),
+                                               static_cast<welvet::Activation>(child_act), packed,
+                                               &layer);
+  if (!st) return to_c(st);
+
+  welvet::TensorF32 input;
+  if (seq == 1) {
+    input.shape = {batch, dim};
+  } else {
+    input.shape = {batch, seq, dim};
+  }
+  input.data.assign(x, x + static_cast<std::size_t>(batch * seq * dim));
+  welvet::TensorF32 pre_t, post_t;
+  st = welvet::sequential::forward(layer, input, &pre_t, &post_t);
+  if (!st) return to_c(st);
+  const std::size_t nout = post_t.data.size();
+  welvet::TensorF32 gy;
+  gy.shape = post_t.shape;
+  gy.data.assign(grad_or_target, grad_or_target + nout);
+  *loss = 0.0;
+  if (use_target) {
+    st = welvet::runtime::training::mse(post_t, gy, loss);
+    if (!st) return to_c(st);
+    welvet::TensorF32 gtmp;
+    st = welvet::runtime::training::mse_grad(post_t, gy, &gtmp);
+    if (!st) return to_c(st);
+    gy = std::move(gtmp);
+  }
+  welvet::TensorF32 dx_t, dw_t;
+  st = welvet::sequential::backward_f32(layer, gy, input, pre_t, &dx_t, &dw_t);
+  if (!st) return to_c(st);
+  if (lr != 0.0) {
+    st = welvet::sequential::apply_grad_sgd(&layer, dw_t, lr);
+    if (!st) return to_c(st);
+  }
+  st = welvet::sequential::export_packed_f32(layer, W_after);
+  if (!st) return to_c(st);
+  std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
+  std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
+  std::memcpy(dX, dx_t.data.data(), dx_t.data.size() * sizeof(float));
+  std::memcpy(dW, dw_t.data.data(), dw_t.data.size() * sizeof(float));
+  return to_c(welvet::Status::Ok());
+}
+
 welvet_status welvet_residual_forward_f32(int32_t batch, int32_t seq, int32_t dim, int32_t depth,
                                           int32_t child_act, int32_t dtype, int32_t /*backend*/,
                                           const float* packed, const float* x, float* pre,
@@ -746,6 +1887,472 @@ welvet_status welvet_residual_forward_f32(int32_t batch, int32_t seq, int32_t di
   if (!st) return to_c(st);
   std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
   std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
+  return to_c(welvet::Status::Ok());
+}
+
+welvet_status welvet_residual_normalbp_f32(int32_t batch, int32_t seq, int32_t dim, int32_t depth,
+                                          int32_t child_act, int32_t dtype, int32_t /*backend*/,
+                                          const float* packed, const float* x,
+                                          const float* grad_or_target, int32_t use_target, double lr,
+                                          float* pre, float* post, float* dX, float* dW,
+                                          float* W_after, double* loss) {
+  if (batch <= 0 || seq <= 0 || dim <= 0 || depth <= 0 || !packed || !x || !grad_or_target || !pre ||
+      !post || !dX || !dW || !W_after || !loss) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "residual nbp: invalid argument");
+    return st;
+  }
+  if (auto st = welvet::cuda::init_default_device(); !st) return to_c(st);
+
+  welvet::residual::Config cfg;
+  cfg.dim = dim;
+  cfg.seq_len = seq;
+  cfg.depth = depth;
+  welvet::residual::Layer layer;
+  auto st = welvet::residual::new_configured(cfg, static_cast<welvet::DType>(dtype),
+                                             static_cast<welvet::Activation>(child_act), packed,
+                                             &layer);
+  if (!st) return to_c(st);
+
+  welvet::TensorF32 input;
+  if (seq == 1) {
+    input.shape = {batch, dim};
+  } else {
+    input.shape = {batch, seq, dim};
+  }
+  input.data.assign(x, x + static_cast<std::size_t>(batch * seq * dim));
+  welvet::TensorF32 pre_t, post_t;
+  st = welvet::residual::forward(layer, input, &pre_t, &post_t);
+  if (!st) return to_c(st);
+  const std::size_t nout = post_t.data.size();
+  welvet::TensorF32 gy;
+  gy.shape = post_t.shape;
+  gy.data.assign(grad_or_target, grad_or_target + nout);
+  *loss = 0.0;
+  if (use_target) {
+    st = welvet::runtime::training::mse(post_t, gy, loss);
+    if (!st) return to_c(st);
+    welvet::TensorF32 gtmp;
+    st = welvet::runtime::training::mse_grad(post_t, gy, &gtmp);
+    if (!st) return to_c(st);
+    gy = std::move(gtmp);
+  }
+  welvet::TensorF32 dx_t, dw_t;
+  st = welvet::residual::backward_f32(layer, gy, input, pre_t, &dx_t, &dw_t);
+  if (!st) return to_c(st);
+  if (lr != 0.0) {
+    st = welvet::residual::apply_grad_sgd(&layer, dw_t, lr);
+    if (!st) return to_c(st);
+  }
+  st = welvet::residual::export_packed_f32(layer, W_after);
+  if (!st) return to_c(st);
+  std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
+  std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
+  std::memcpy(dX, dx_t.data.data(), dx_t.data.size() * sizeof(float));
+  std::memcpy(dW, dw_t.data.data(), dw_t.data.size() * sizeof(float));
+  return to_c(welvet::Status::Ok());
+}
+
+namespace {
+
+welvet::Status make_nested_stack_dense(int dim, int n_children, welvet::Activation child_act,
+                                       welvet::DType dtype, const float* packed,
+                                       welvet::stack::Layer* out) {
+  if (!out || !packed || dim <= 0 || n_children <= 0) {
+    return welvet::Status::Err(welvet::StatusCode::InvalidArgument, "stack nbp: bad args");
+  }
+  welvet::stack::Child nest;
+  nest.kind = welvet::stack::Kind::NestedStack;
+  int off = 0;
+  for (int i = 0; i < n_children; ++i) {
+    welvet::stack::Child d;
+    d.kind = welvet::stack::Kind::Dense;
+    auto st = welvet::dense::new_layer(dim, dim, child_act, dtype, packed + off, &d.dense_op);
+    if (!st) return st;
+    off += dim * dim;
+    nest.nested.push_back(std::move(d));
+  }
+  out->children.clear();
+  out->children.push_back(std::move(nest));
+  out->meta.type = welvet::LayerType::Stack;
+  out->meta.dtype = dtype;
+  out->meta.input_height = dim;
+  out->meta.output_height = dim;
+  return welvet::Status::Ok();
+}
+
+} // namespace
+
+welvet_status welvet_stack_normalbp_f32(int32_t batch, int32_t seq, int32_t dim, int32_t n_children,
+                                        int32_t child_act, int32_t dtype, int32_t /*backend*/,
+                                        const float* packed, const float* x,
+                                        const float* grad_or_target, int32_t use_target, double lr,
+                                        float* pre, float* post, float* dX, float* dW,
+                                        float* W_after, double* loss) {
+  if (batch <= 0 || seq <= 0 || dim <= 0 || n_children <= 0 || !packed || !x || !grad_or_target ||
+      !pre || !post || !dX || !dW || !W_after || !loss) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "stack nbp: invalid argument");
+    return st;
+  }
+  if (auto st = welvet::cuda::init_default_device(); !st) return to_c(st);
+
+  welvet::stack::Layer layer;
+  auto st = make_nested_stack_dense(dim, n_children, static_cast<welvet::Activation>(child_act),
+                                    static_cast<welvet::DType>(dtype), packed, &layer);
+  if (!st) return to_c(st);
+  const int batch_flat = batch * seq;
+  welvet::TensorF32 input;
+  input.shape = {batch_flat, dim};
+  input.data.assign(x, x + static_cast<std::size_t>(batch_flat * dim));
+  welvet::TensorF32 pre_t, post_t;
+  st = welvet::stack::forward(layer, input, &pre_t, &post_t);
+  if (!st) return to_c(st);
+  const std::size_t nout = post_t.data.size();
+  welvet::TensorF32 gy;
+  gy.shape = post_t.shape;
+  gy.data.assign(grad_or_target, grad_or_target + nout);
+  *loss = 0.0;
+  if (use_target) {
+    st = welvet::runtime::training::mse(post_t, gy, loss);
+    if (!st) return to_c(st);
+    welvet::TensorF32 gtmp;
+    st = welvet::runtime::training::mse_grad(post_t, gy, &gtmp);
+    if (!st) return to_c(st);
+    gy = std::move(gtmp);
+  }
+  welvet::TensorF32 dx_t, dw_t;
+  st = welvet::stack::backward_f32(layer, gy, input, pre_t, &dx_t, &dw_t);
+  if (!st) return to_c(st);
+  if (lr != 0.0) {
+    st = welvet::stack::apply_grad_sgd(&layer, dw_t, lr);
+    if (!st) return to_c(st);
+  }
+  st = welvet::stack::export_packed_f32(layer, W_after);
+  if (!st) return to_c(st);
+  std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
+  std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
+  std::memcpy(dX, dx_t.data.data(), dx_t.data.size() * sizeof(float));
+  std::memcpy(dW, dw_t.data.data(), dw_t.data.size() * sizeof(float));
+  return to_c(welvet::Status::Ok());
+}
+
+
+welvet_status welvet_mamba_normalbp_f32(int32_t batch, int32_t seq, int32_t d_model, int32_t d_state,
+                                       int32_t expand, int32_t dtype, int32_t /*backend*/,
+                                       const float* packed, const float* x,
+                                       const float* grad_or_target, int32_t use_target, double lr,
+                                       float* pre, float* post, float* dX, float* dW, float* W_after,
+                                       double* loss) {
+  if (batch <= 0 || seq <= 0 || d_model <= 0 || d_state <= 0 || !packed || !x || !grad_or_target ||
+      !pre || !post || !dX || !dW || !W_after || !loss) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "mamba nbp: invalid argument");
+    return st;
+  }
+  if (auto st = welvet::cuda::init_default_device(); !st) return to_c(st);
+  welvet::mamba::Config cfg;
+  cfg.d_model = d_model;
+  cfg.d_state = d_state;
+  cfg.expand = expand;
+  cfg.seq_len = seq;
+  welvet::mamba::Layer layer;
+  auto st = welvet::mamba::new_configured(cfg, static_cast<welvet::DType>(dtype), packed, &layer);
+  if (!st) return to_c(st);
+  welvet::TensorF32 input;
+  input.shape = {batch, seq, d_model};
+  input.data.assign(x, x + static_cast<std::size_t>(batch * seq * d_model));
+  welvet::TensorF32 pre_t, post_t;
+  st = welvet::mamba::forward(layer, input, &pre_t, &post_t);
+  if (!st) return to_c(st);
+  const std::size_t nout = post_t.data.size();
+  welvet::TensorF32 gy;
+  gy.shape = post_t.shape;
+  gy.data.assign(grad_or_target, grad_or_target + nout);
+  *loss = 0.0;
+  if (use_target) {
+    st = welvet::runtime::training::mse(post_t, gy, loss);
+    if (!st) return to_c(st);
+    welvet::TensorF32 gtmp;
+    st = welvet::runtime::training::mse_grad(post_t, gy, &gtmp);
+    if (!st) return to_c(st);
+    gy = std::move(gtmp);
+  }
+  welvet::TensorF32 dx_t, dw_t;
+  st = welvet::mamba::backward_f32(layer, gy, input, pre_t, &dx_t, &dw_t);
+  if (!st) return to_c(st);
+  if (lr != 0.0) {
+    st = welvet::mamba::apply_grad_sgd(&layer, dw_t, lr);
+    if (!st) return to_c(st);
+  }
+  st = welvet::mamba::export_packed_f32(layer, W_after);
+  if (!st) return to_c(st);
+  std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
+  std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
+  std::memcpy(dX, dx_t.data.data(), dx_t.data.size() * sizeof(float));
+  std::memcpy(dW, dw_t.data.data(), dw_t.data.size() * sizeof(float));
+  return to_c(welvet::Status::Ok());
+}
+
+
+welvet_status welvet_metacognition_normalbp_f32(int32_t batch, int32_t seq, int32_t dim, int32_t dtype,
+                                                int32_t /*backend*/, const float* packed, const float* x,
+                                                const float* grad_or_target, int32_t use_target,
+                                                double lr, float* pre, float* post, float* dX,
+                                                float* dW, float* W_after, double* loss) {
+  if (batch <= 0 || seq <= 0 || dim <= 0 || !packed || !x || !grad_or_target || !pre || !post ||
+      !dX || !dW || !W_after || !loss) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "metacognition nbp: invalid argument");
+    return st;
+  }
+  if (auto st = welvet::cuda::init_default_device(); !st) return to_c(st);
+  welvet::metacognition::Config cfg;
+  cfg.dim = dim;
+  cfg.seq_len = seq == 1 ? 0 : seq;
+  welvet::metacognition::Layer layer;
+  auto st =
+      welvet::metacognition::new_configured(cfg, static_cast<welvet::DType>(dtype), packed, &layer);
+  if (!st) return to_c(st);
+  welvet::TensorF32 input;
+  if (seq == 1) {
+    input.shape = {batch, dim};
+  } else {
+    input.shape = {batch, seq, dim};
+  }
+  input.data.assign(x, x + static_cast<std::size_t>(batch * seq * dim));
+  welvet::TensorF32 pre_t, post_t;
+  st = welvet::metacognition::forward(layer, input, &pre_t, &post_t);
+  if (!st) return to_c(st);
+  const std::size_t nout = post_t.data.size();
+  welvet::TensorF32 gy;
+  gy.shape = post_t.shape;
+  gy.data.assign(grad_or_target, grad_or_target + nout);
+  *loss = 0.0;
+  if (use_target) {
+    st = welvet::runtime::training::mse(post_t, gy, loss);
+    if (!st) return to_c(st);
+    welvet::TensorF32 gtmp;
+    st = welvet::runtime::training::mse_grad(post_t, gy, &gtmp);
+    if (!st) return to_c(st);
+    gy = std::move(gtmp);
+  }
+  welvet::TensorF32 dx_t, dw_t;
+  st = welvet::metacognition::backward_f32(layer, gy, input, pre_t, &dx_t, &dw_t);
+  if (!st) return to_c(st);
+  if (lr != 0.0) {
+    st = welvet::metacognition::apply_grad_sgd(&layer, dw_t, lr);
+    if (!st) return to_c(st);
+  }
+  st = welvet::metacognition::export_packed_f32(layer, W_after);
+  if (!st) return to_c(st);
+  std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
+  std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
+  std::memcpy(dX, dx_t.data.data(), dx_t.data.size() * sizeof(float));
+  std::memcpy(dW, dw_t.data.data(), dw_t.data.size() * sizeof(float));
+  return to_c(welvet::Status::Ok());
+}
+
+
+welvet_status welvet_gdn_normalbp_f32(int32_t batch, int32_t seq, int32_t hidden,
+                                      int32_t num_key_heads, int32_t num_value_heads,
+                                      int32_t key_head_dim, int32_t value_head_dim,
+                                      int32_t conv_kernel, int32_t /*dtype*/, int32_t /*backend*/,
+                                      const float* packed, const float* x,
+                                      const float* grad_or_target, int32_t use_target, double lr,
+                                      float* pre, float* post, float* dX, float* dW, float* W_after,
+                                      double* loss) {
+  if (batch <= 0 || seq <= 0 || hidden <= 0 || !packed || !x || !grad_or_target || !pre || !post ||
+      !dX || !dW || !W_after || !loss) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "gdn nbp: invalid argument");
+    return st;
+  }
+  if (auto st = welvet::cuda::init_default_device(); !st) return to_c(st);
+  welvet::gdn::Config cfg;
+  cfg.hidden_size = hidden;
+  cfg.num_key_heads = num_key_heads;
+  cfg.num_value_heads = num_value_heads;
+  cfg.key_head_dim = key_head_dim;
+  cfg.value_head_dim = value_head_dim;
+  cfg.conv_kernel = conv_kernel;
+  welvet::gdn::Layer layer;
+  auto st = welvet::gdn::new_configured(cfg, packed, &layer);
+  if (!st) return to_c(st);
+  welvet::TensorF32 input;
+  input.shape = {batch, seq, hidden};
+  input.data.assign(x, x + static_cast<std::size_t>(batch * seq * hidden));
+  welvet::TensorF32 pre_t, post_t;
+  st = welvet::gdn::forward(layer, input, &pre_t, &post_t);
+  if (!st) return to_c(st);
+  const std::size_t nout = post_t.data.size();
+  welvet::TensorF32 gy;
+  gy.shape = post_t.shape;
+  gy.data.assign(grad_or_target, grad_or_target + nout);
+  *loss = 0.0;
+  if (use_target) {
+    st = welvet::runtime::training::mse(post_t, gy, loss);
+    if (!st) return to_c(st);
+    welvet::TensorF32 gtmp;
+    st = welvet::runtime::training::mse_grad(post_t, gy, &gtmp);
+    if (!st) return to_c(st);
+    gy = std::move(gtmp);
+  }
+  welvet::TensorF32 dx_t, dw_t;
+  st = welvet::gdn::backward_f32(layer, gy, input, pre_t, &dx_t, &dw_t);
+  if (!st) return to_c(st);
+  if (lr != 0.0) {
+    st = welvet::gdn::apply_grad_sgd(&layer, dw_t, lr);
+    if (!st) return to_c(st);
+  }
+  st = welvet::gdn::export_packed_f32(layer, W_after);
+  if (!st) return to_c(st);
+  std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
+  std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
+  std::memcpy(dX, dx_t.data.data(), dx_t.data.size() * sizeof(float));
+  std::memcpy(dW, dw_t.data.data(), dw_t.data.size() * sizeof(float));
+  return to_c(welvet::Status::Ok());
+}
+
+
+welvet_status welvet_kmeans_normalbp_f32(int32_t batch, int32_t seq, int32_t num_clusters,
+                                         int32_t feature_dim, int32_t output_mode, int32_t act,
+                                         double temperature, int32_t dtype, int32_t /*backend*/,
+                                         const float* W, const float* x,
+                                         const float* grad_or_target, int32_t use_target, double lr,
+                                         float* pre, float* post, float* dX, float* dW,
+                                         float* W_after, double* loss) {
+  if (batch <= 0 || seq <= 0 || num_clusters <= 0 || feature_dim <= 0 || !W || !x ||
+      !grad_or_target || !pre || !post || !dX || !dW || !W_after || !loss) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "kmeans nbp: invalid argument");
+    return st;
+  }
+  if (auto st = welvet::cuda::init_default_device(); !st) return to_c(st);
+  welvet::kmeans::Config cfg;
+  cfg.num_clusters = num_clusters;
+  cfg.feature_dim = feature_dim;
+  cfg.temperature = temperature;
+  cfg.output_mode = static_cast<welvet::kmeans::OutputMode>(output_mode);
+  cfg.activation = static_cast<welvet::Activation>(act);
+  welvet::kmeans::Layer layer;
+  auto st = welvet::kmeans::new_configured(cfg, static_cast<welvet::DType>(dtype), W, &layer);
+  if (!st) return to_c(st);
+  welvet::TensorF32 input;
+  if (seq == 1) {
+    input.shape = {batch, feature_dim};
+  } else {
+    input.shape = {batch, seq, feature_dim};
+  }
+  input.data.assign(x, x + static_cast<std::size_t>(batch * seq * feature_dim));
+  welvet::TensorF32 pre_t, post_t;
+  st = welvet::kmeans::forward(layer, input, &pre_t, &post_t);
+  if (!st) return to_c(st);
+  const std::size_t nout = post_t.data.size();
+  welvet::TensorF32 gy;
+  gy.shape = post_t.shape;
+  gy.data.assign(grad_or_target, grad_or_target + nout);
+  *loss = 0.0;
+  if (use_target) {
+    st = welvet::runtime::training::mse(post_t, gy, loss);
+    if (!st) return to_c(st);
+    welvet::TensorF32 gtmp;
+    st = welvet::runtime::training::mse_grad(post_t, gy, &gtmp);
+    if (!st) return to_c(st);
+    gy = std::move(gtmp);
+  }
+  welvet::TensorF32 dx_t, dw_t;
+  st = welvet::kmeans::backward_f32(layer, gy, input, pre_t, &dx_t, &dw_t);
+  if (!st) return to_c(st);
+  if (lr != 0.0) {
+    st = welvet::kmeans::apply_grad_sgd(&layer, dw_t, lr);
+    if (!st) return to_c(st);
+  }
+  st = welvet::kmeans::export_packed_f32(layer, W_after);
+  if (!st) return to_c(st);
+  std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
+  std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
+  std::memcpy(dX, dx_t.data.data(), dx_t.data.size() * sizeof(float));
+  std::memcpy(dW, dw_t.data.data(), dw_t.data.size() * sizeof(float));
+  return to_c(welvet::Status::Ok());
+}
+
+
+welvet_status welvet_parallel_normalbp_f32(int32_t batch, int32_t seq, int32_t dim, int32_t out_feat,
+                                           int32_t branches, int32_t combine, int32_t sparse_k,
+                                           int32_t dtype, int32_t /*backend*/, double disagree_beta,
+                                           const float* packed, const float* x,
+                                           const float* grad_or_target, int32_t use_target,
+                                           double lr, float* pre, float* post, float* dX, float* dW,
+                                           float* W_after, double* loss) {
+  if (batch <= 0 || seq <= 0 || dim <= 0 || out_feat <= 0 || branches <= 0 || !packed || !x ||
+      !grad_or_target || !pre || !post || !dX || !dW || !W_after || !loss) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "parallel nbp: invalid argument");
+    return st;
+  }
+  if (combine < 0 || combine > 6) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "parallel nbp: bad combine");
+    return st;
+  }
+  if (auto st = welvet::cuda::init_default_device(); !st) return to_c(st);
+  welvet::parallel::Config cfg;
+  cfg.dim = dim;
+  cfg.out_feat = out_feat;
+  cfg.branches = branches;
+  cfg.combine = static_cast<welvet::parallel::Combine>(combine);
+  cfg.seq_len = seq == 1 ? 0 : seq;
+  cfg.sparse_k = sparse_k;
+  cfg.disagree_beta = disagree_beta;
+  welvet::parallel::Layer layer;
+  auto st =
+      welvet::parallel::new_configured(cfg, static_cast<welvet::DType>(dtype), packed, &layer);
+  if (!st) return to_c(st);
+  welvet::TensorF32 input;
+  if (seq == 1) {
+    input.shape = {batch, dim};
+  } else {
+    input.shape = {batch, seq, dim};
+  }
+  input.data.assign(x, x + static_cast<std::size_t>(batch * seq * dim));
+  welvet::TensorF32 pre_t, post_t;
+  st = welvet::parallel::forward(layer, input, &pre_t, &post_t);
+  if (!st) return to_c(st);
+  const std::size_t nout = post_t.data.size();
+  welvet::TensorF32 gy;
+  gy.shape = post_t.shape;
+  gy.data.assign(grad_or_target, grad_or_target + nout);
+  *loss = 0.0;
+  if (use_target) {
+    st = welvet::runtime::training::mse(post_t, gy, loss);
+    if (!st) return to_c(st);
+    welvet::TensorF32 gtmp;
+    st = welvet::runtime::training::mse_grad(post_t, gy, &gtmp);
+    if (!st) return to_c(st);
+    gy = std::move(gtmp);
+  }
+  welvet::TensorF32 dx_t, dw_t;
+  st = welvet::parallel::backward_f32(layer, gy, input, pre_t, &dx_t, &dw_t);
+  if (!st) return to_c(st);
+  if (lr != 0.0) {
+    st = welvet::parallel::apply_grad_sgd(&layer, dw_t, lr);
+    if (!st) return to_c(st);
+  }
+  st = welvet::parallel::export_packed_f32(layer, W_after);
+  if (!st) return to_c(st);
+  std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
+  std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
+  std::memcpy(dX, dx_t.data.data(), dx_t.data.size() * sizeof(float));
+  std::memcpy(dW, dw_t.data.data(), dw_t.data.size() * sizeof(float));
   return to_c(welvet::Status::Ok());
 }
 

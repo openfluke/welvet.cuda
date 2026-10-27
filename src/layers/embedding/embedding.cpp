@@ -118,4 +118,50 @@ Status forward(const Layer& layer, const TensorF32& input, TensorF32* pre, Tenso
   return Status::Ok();
 }
 
+Status backward_f32(const Layer& layer, const TensorF32& grad_out, const TensorF32& input,
+                    const TensorF32& /*pre*/, TensorF32* grad_in, TensorF32* grad_w) {
+  if (!grad_in || !grad_w) {
+    return Status::Err(StatusCode::InvalidArgument, "embedding: nil grad_in/grad_w");
+  }
+  if (auto st = validate(layer.cfg); !st) return st;
+
+  Layout lay;
+  if (auto st = parse_layout(layer.cfg, input, &lay); !st) return st;
+  if (static_cast<int>(grad_out.data.size()) < lay.n_tok * lay.emb) {
+    return Status::Err(StatusCode::InvalidArgument, "embedding: gradOut short");
+  }
+
+  const int emb = lay.emb;
+  const int nw = lay.vocab * emb;
+  grad_w->shape = {lay.vocab, emb};
+  grad_w->data.assign(static_cast<std::size_t>(nw), 0.0f);
+
+  if (auto st = cuda::launch_embedding_scatter(input.data.data(), grad_out.data.data(),
+                                               grad_w->data.data(), lay.n_tok, emb, lay.vocab,
+                                               lay.in_last);
+      !st) {
+    return st;
+  }
+
+  // zeros — no gradient through discrete token IDs
+  grad_in->shape = input.shape;
+  grad_in->data.assign(input.data.size(), 0.0f);
+  return Status::Ok();
+}
+
+Status apply_grad_sgd(Layer* layer, const TensorF32& dW, double lr) {
+  if (!layer) {
+    return Status::Err(StatusCode::InvalidArgument, "embedding: ApplyGradSGD nil");
+  }
+  const int n = layer->weights.rows * layer->weights.cols;
+  if (static_cast<int>(dW.data.size()) < n) {
+    return Status::Err(StatusCode::InvalidArgument, "embedding: dW short");
+  }
+  std::vector<double> buf(static_cast<std::size_t>(n));
+  for (int i = 0; i < n; ++i) {
+    buf[static_cast<std::size_t>(i)] = static_cast<double>(dW.data[static_cast<std::size_t>(i)]);
+  }
+  return layer->weights.apply_sgd(buf.data(), lr);
+}
+
 } // namespace welvet::embedding

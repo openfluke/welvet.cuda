@@ -32,6 +32,26 @@ usage: $0 [flags]
   --parallel-fwd      Parallel forward
   --seqmix-fwd        seqmix smoke
   --leaf-fwd-all      all leaf FormatNone forward suites
+  --dense-train       Dense NormalBP leaf + volume (7 cases)
+  --rmsnorm-train     RMSNorm NormalBP leaf + volume (7 cases)
+  --layernorm-train   LayerNorm NormalBP leaf + volume (7 cases)
+  --softmax-train     Softmax NormalBP leaf + volume (9 cases)
+  --swiglu-train      SwiGLU NormalBP leaf + volume (7 cases)
+  --embedding-train   Embedding NormalBP leaf + volume (7 cases)
+  --mha-train         MHA NormalBP leaf + volume (8 cases)
+  --cnn-train         CNN1/2/3 NormalBP leaf + volume
+  --convt-train       ConvT1/2/3 NormalBP leaf + volume
+  --rnn-train         RNN NormalBP leaf + volume
+  --lstm-train        LSTM NormalBP leaf + volume
+  --sequential-train  Sequential NormalBP leaf + volume
+  --residual-train    Residual NormalBP leaf + volume
+  --stack-train       Stack NestedStack-of-Dense NormalBP leaf + volume
+  --mamba-train       Mamba NormalBP leaf + volume
+  --metacognition-train Metacognition NormalBP leaf + volume
+  --gdn-train         GDN NormalBP leaf + volume (f32)
+  --kmeans-train      KMeans NormalBP leaf + volume
+  --parallel-train    Parallel + ParallelPoly + NormalBPEdges
+  --normalbp-all      Full TestGoVCudaNormalBP aggregator
   --help
 EOF
 }
@@ -42,7 +62,7 @@ if [[ $# -gt 0 ]]; then
     --help|-h) usage; exit 0 ;;
     --smoke) MODE=smoke; shift ;;
     --gaps) MODE=gaps; shift ;;
-    --dense-fwd|--rmsnorm-fwd|--layernorm-fwd|--softmax-fwd|--swiglu-fwd|--embedding-fwd|--mha-fwd|--cnn-fwd|--convt-fwd|--rnn-fwd|--lstm-fwd|--sequential-fwd|--residual-fwd|--mamba-fwd|--metacognition-fwd|--gdn-fwd|--kmeans-fwd|--parallel-fwd|--seqmix-fwd|--leaf-fwd-all)
+    --dense-fwd|--rmsnorm-fwd|--layernorm-fwd|--softmax-fwd|--swiglu-fwd|--embedding-fwd|--mha-fwd|--cnn-fwd|--convt-fwd|--rnn-fwd|--lstm-fwd|--sequential-fwd|--residual-fwd|--mamba-fwd|--metacognition-fwd|--gdn-fwd|--kmeans-fwd|--parallel-fwd|--seqmix-fwd|--leaf-fwd-all|--dense-train|--rmsnorm-train|--layernorm-train|--softmax-train|--swiglu-train|--embedding-train|--mha-train|--cnn-train|--convt-train|--rnn-train|--lstm-train|--sequential-train|--residual-train|--stack-train|--mamba-train|--metacognition-train|--gdn-train|--kmeans-train|--parallel-train|--normalbp-all)
       MODE="${1#--}"; shift ;;
     *)
       echo "unknown flag '$1'" >&2
@@ -71,14 +91,17 @@ run_go_test() {
     exit 1
   fi
   export LD_LIBRARY_PATH="${ROOT}/.deps/cuda/cuda/lib64:${LD_LIBRARY_PATH:-}"
+  # Default 1 measured bench iter (match metal); set WELVET_CUDA_BENCH_ITERS=2000 for long perf.
+  export WELVET_CUDA_BENCH_ITERS="${WELVET_CUDA_BENCH_ITERS:-1}"
   (
     cd "$W2A"
     env -u CC -u CXX -u CMAKE_CXX_COMPILER -u CMAKE_C_COMPILER \
       PATH="/usr/bin:/usr/local/go/bin:${PATH}" \
       WELVET_CUDA_DENSE_FWD="$WELVET_CUDA_DENSE_FWD" \
       WELVET_DENSE_FWD="${WELVET_DENSE_FWD:-}" \
+      WELVET_CUDA_BENCH_ITERS="$WELVET_CUDA_BENCH_ITERS" \
       LD_LIBRARY_PATH="$LD_LIBRARY_PATH" \
-      go test ./tests/go_v_cuda -v -count=1 -run "$pattern"
+      go test ./tests/go_v_cuda -v -count=1 -timeout 90m -run "$pattern"
   )
 }
 
@@ -105,4 +128,24 @@ case "$MODE" in
   parallel-fwd) run_go_test '^TestGoVCudaParallel$' ;;
   seqmix-fwd) run_go_test '^TestGoVCudaSeqmix$' ;;
   leaf-fwd-all) run_go_test '^TestGoVCuda(DenseForward|RMSNorm|LayerNorm|Softmax|SwiGLU|Embedding|MHA|CNN|ConvT|RNN|LSTM|Sequential|Residual|Mamba|Metacognition|GDN|KMeans|Parallel|Seqmix)$' ;;
+  dense-train) run_go_test '^TestGoVCudaDenseTrain$' ;;
+  rmsnorm-train) run_go_test '^TestGoVCudaRMSNormTrain$' ;;
+  layernorm-train) run_go_test '^TestGoVCudaLayerNormTrain$' ;;
+  softmax-train) run_go_test '^TestGoVCudaSoftmaxTrain$' ;;
+  swiglu-train) run_go_test '^TestGoVCudaSwiGLUTrain$' ;;
+  embedding-train) run_go_test '^TestGoVCudaEmbeddingTrain$' ;;
+  mha-train) run_go_test '^TestGoVCudaMHATrain$' ;;
+  cnn-train) run_go_test '^TestGoVCudaCNNTrain$' ;;
+  convt-train) run_go_test '^TestGoVCudaConvTTrain$' ;;
+  rnn-train) run_go_test '^TestGoVCudaRNNTrain$' ;;
+  lstm-train) run_go_test '^TestGoVCudaLSTMTrain$' ;;
+  sequential-train) run_go_test '^TestGoVCudaSequentialTrain$' ;;
+  residual-train) run_go_test '^TestGoVCudaResidualTrain$' ;;
+  stack-train) run_go_test '^TestGoVCudaStackTrain$' ;;
+  mamba-train) run_go_test '^TestGoVCudaMambaTrain$' ;;
+  metacognition-train) run_go_test '^TestGoVCudaMetacognitionTrain$' ;;
+  gdn-train) run_go_test '^TestGoVCudaGDNTrain$' ;;
+  kmeans-train) run_go_test '^TestGoVCudaKMeansTrain$' ;;
+  parallel-train) run_go_test '^TestGoVCuda(ParallelTrain|ParallelPolyTrain|NormalBPEdges)$' ;;
+  normalbp-all) run_go_test '^TestGoVCudaNormalBP$' ;;
 esac

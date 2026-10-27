@@ -85,4 +85,55 @@ Status forward_f32(const Layer& layer, const TensorF32& input, TensorF32* pre, T
                                 pre->data.data(), post->data.data());
 }
 
+Status backward_f32(const Layer& layer, const TensorF32& grad_out, const TensorF32& input,
+                    const TensorF32& pre, TensorF32* grad_in, TensorF32* grad_w) {
+  if (!grad_in || !grad_w) {
+    return Status::Err(StatusCode::InvalidArgument, "dense: nil grad out");
+  }
+  if (input.shape.size() != 2 || grad_out.shape.size() != 2 || pre.shape.size() != 2) {
+    return Status::Err(StatusCode::InvalidArgument, "dense: bad shapes");
+  }
+  const int batch = static_cast<int>(input.shape[0]);
+  const int in = layer.input_height;
+  const int out = layer.output_height;
+  if (batch <= 0 || input.data.size() != static_cast<std::size_t>(batch) * static_cast<std::size_t>(in) ||
+      pre.data.size() != static_cast<std::size_t>(batch) * static_cast<std::size_t>(out) ||
+      grad_out.data.size() != static_cast<std::size_t>(batch) * static_cast<std::size_t>(out) ||
+      static_cast<int>(input.shape[1]) != in || static_cast<int>(grad_out.shape[0]) != batch ||
+      static_cast<int>(grad_out.shape[1]) != out || static_cast<int>(pre.shape[0]) != batch ||
+      static_cast<int>(pre.shape[1]) != out) {
+    return Status::Err(StatusCode::InvalidArgument, "dense: bwd shape mismatch");
+  }
+  if (layer.weights.rows != out || layer.weights.cols != in) {
+    return Status::Err(StatusCode::InvalidArgument, "dense: weight shape mismatch");
+  }
+
+  if (!layer.gpu_valid || layer.gpu_batch != batch) {
+    if (auto st = sync_gpu_from_weights(layer, batch); !st) return st;
+  }
+
+  *grad_in = TensorF32::zeros(batch, in);
+  *grad_w = TensorF32::zeros(out, in);
+  return cuda::resident_backward(const_cast<cuda::ResidentDense*>(&layer.gpu), grad_out.data.data(),
+                                 input.data.data(), pre.data.data(), grad_in->data.data(),
+                                 grad_w->data.data());
+}
+
+Status apply_grad_sgd(Layer* layer, const TensorF32& dW, double lr) {
+  if (!layer) {
+    return Status::Err(StatusCode::InvalidArgument, "dense: nil SGD layer");
+  }
+  const int n = layer->weights.rows * layer->weights.cols;
+  if (static_cast<int>(dW.data.size()) < n) {
+    return Status::Err(StatusCode::InvalidArgument, "dense: dW short");
+  }
+  std::vector<double> buf(static_cast<std::size_t>(n));
+  for (int i = 0; i < n; ++i) {
+    buf[static_cast<std::size_t>(i)] = static_cast<double>(dW.data[static_cast<std::size_t>(i)]);
+  }
+  if (auto st = layer->weights.apply_sgd(buf.data(), lr); !st) return st;
+  layer->invalidate_gpu();
+  return Status::Ok();
+}
+
 } // namespace welvet::dense

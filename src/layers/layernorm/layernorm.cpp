@@ -118,4 +118,59 @@ Status forward(Layer& layer, const TensorF32& input, TensorF32* pre, TensorF32* 
                                    post->data.data(), n_tok, dim, cfg.eps, /*center=*/1);
 }
 
+Status backward_f32(const Layer& layer, const TensorF32& grad_out, const TensorF32& input,
+                    const TensorF32& pre, TensorF32* grad_in, TensorF32* grad_w) {
+  if (!grad_in || !grad_w) {
+    return Status::Err(StatusCode::InvalidArgument, "layernorm: nil grad out");
+  }
+  Config cfg = layer.cfg;
+  if (auto st = validate(&cfg); !st) return st;
+
+  Layout lay;
+  if (auto st = parse_layout(cfg.dim, input, &lay); !st) return st;
+  const int dim = cfg.dim;
+  const int n_tok = lay.batch * lay.seq;
+  if (static_cast<int>(pre.data.size()) < n_tok * dim ||
+      static_cast<int>(grad_out.data.size()) < n_tok * dim) {
+    return Status::Err(StatusCode::InvalidArgument, "layernorm: pre (x̂) or gradOut short");
+  }
+
+  std::vector<double> g(static_cast<std::size_t>(dim));
+  if (auto st = layer.gamma.decode_row_f64(0, g.data()); !st) {
+    return Status::Err(st.code, std::string("layernorm gamma: ") + st.message);
+  }
+
+  if (lay.seq == 1) {
+    grad_in->shape = {lay.batch, dim};
+  } else {
+    grad_in->shape = {lay.batch, lay.seq, dim};
+  }
+  grad_in->data.assign(static_cast<std::size_t>(n_tok * dim), 0.0f);
+  *grad_w = TensorF32::zeros(1, 2 * dim);
+
+  if (auto st = cuda::init_default_device(); !st) return st;
+  return cuda::launch_norm_backward(input.data.data(), g.data(), pre.data.data(),
+                                    grad_out.data.data(), grad_in->data.data(), grad_w->data.data(),
+                                    n_tok, dim, cfg.eps, /*center=*/1);
+}
+
+Status apply_grad_sgd(Layer* layer, const TensorF32& dW, double lr) {
+  if (!layer) {
+    return Status::Err(StatusCode::InvalidArgument, "layernorm: ApplyGradSGD nil");
+  }
+  const int dim = layer->cfg.dim;
+  if (static_cast<int>(dW.data.size()) < 2 * dim) {
+    return Status::Err(StatusCode::InvalidArgument, "layernorm: dW short");
+  }
+  std::vector<double> g_buf(static_cast<std::size_t>(dim));
+  std::vector<double> b_buf(static_cast<std::size_t>(dim));
+  for (int i = 0; i < dim; ++i) {
+    g_buf[static_cast<std::size_t>(i)] = static_cast<double>(dW.data[static_cast<std::size_t>(i)]);
+    b_buf[static_cast<std::size_t>(i)] =
+        static_cast<double>(dW.data[static_cast<std::size_t>(dim + i)]);
+  }
+  if (auto st = layer->gamma.apply_sgd(g_buf.data(), lr); !st) return st;
+  return layer->beta.apply_sgd(b_buf.data(), lr);
+}
+
 } // namespace welvet::layernorm

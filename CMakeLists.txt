@@ -6,7 +6,7 @@ if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES OR CMAKE_CUDA_ARCHITECTURES STREQUAL "")
   set(CMAKE_CUDA_ARCHITECTURES "75")
 endif()
 
-project(welvet_cuda VERSION 0.27 LANGUAGES CXX CUDA)
+project(welvet_cuda VERSION 0.51 LANGUAGES CXX CUDA)
 
 # NVIDIA CUDA-only Welvet engine: C++ host + CUDA kernels.
 # Linux x86_64 is the primary host; Windows is a later artifact.
@@ -55,6 +55,7 @@ set(WELVET_CORE_SOURCES
   src/layers/lstm/lstm.cpp
   src/layers/sequential/sequential.cpp
   src/layers/residual/residual.cpp
+  src/layers/stack/stack.cpp
   src/layers/mamba/mamba.cpp
   src/layers/metacognition/metacognition.cpp
   src/layers/gdn/gdn.cpp
@@ -83,6 +84,12 @@ target_include_directories(welvet_cuda_obj
 )
 target_compile_definitions(welvet_cuda_obj PRIVATE WELVET_CUDA=1)
 target_link_libraries(welvet_cuda_obj PUBLIC CUDA::cudart)
+# Match welvet.cpp / Go: disable FMA contraction so host Softmax/KMeans/Parallel
+# double paths stay bit-stable vs Go (see kmeans.cpp comment).
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(welvet_cuda_obj PRIVATE
+    $<$<COMPILE_LANGUAGE:CXX>:-ffp-contract=off>)
+endif()
 
 if(WELVET_BUILD_SHARED)
   add_library(welvet SHARED $<TARGET_OBJECTS:welvet_cuda_obj>)
@@ -104,8 +111,15 @@ set_target_properties(welvet PROPERTIES
 )
 
 if(WELVET_BUILD_TOOLS)
-  add_executable(welvet_dense_fwd tools/dense_fwd/main.cpp)
+  add_executable(welvet_dense_fwd
+    tools/dense_fwd/main.cpp
+    tools/dense_fwd/volume_fwd.cpp
+  )
+  target_include_directories(welvet_dense_fwd PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tools/dense_fwd)
   target_link_libraries(welvet_dense_fwd PRIVATE welvet)
+  if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(welvet_dense_fwd PRIVATE -ffp-contract=off)
+  endif()
 endif()
 
 if(WELVET_BUILD_EXAMPLES)

@@ -19,6 +19,38 @@
 //   WKM1 — KMeans → WKMO; --bench → WVB1
 //   WPL1 — Parallel → WPLO; --bench → WVB1
 //   WSX1 — seqmix Kind smoke → WSXO (no tensors)
+//   WDB1 — Dense NormalBP leaf → WDBO; --bench → WVB1
+//   WVN1 — Volume Dense NormalBP → WVNO; --bench → WVB1
+//   WRB1 — RMSNorm NormalBP leaf → WRBO; --bench → WVB1
+//   WRV1 — Volume RMSNorm NormalBP → WRVO; --bench → WVB1
+//   WLB1 — LayerNorm NormalBP leaf → WLBO; --bench → WVB1
+//   WLV1 — Volume LayerNorm NormalBP → WLVO; --bench → WVB1
+//   WXB1 — Softmax NormalBP leaf → WXBO; --bench → WVB1
+//   WXV1 — Volume Softmax NormalBP → WXVO; --bench → WVB1
+//   WSB1 — SwiGLU NormalBP leaf → WSBO; --bench → WVB1
+//   WSV1 — Volume SwiGLU NormalBP → WSVO; --bench → WVB1
+//   WEB1 — Embedding NormalBP leaf → WEBO; --bench → WVB1
+//   WEV1 — Volume Embedding NormalBP → WEVO; --bench → WVB1
+//   WHB1 — MHA NormalBP leaf → WHBO; --bench → WVB1
+//   WHV1 — Volume MHA NormalBP → WHVO; --bench → WVB1
+//   C1B1 / C2B1 / C3B1 — CNN NormalBP leaf → C*BO; --bench → WVB1
+//   C1V1 / C2V1 / C3V1 — Volume CNN NormalBP → C*VO; --bench → WVB1
+//   T1B1 / T2B1 / T3B1 — ConvT NormalBP leaf → T*BO; --bench → WVB1
+//   T1V1 / T2V1 / T3V1 — Volume ConvT NormalBP → T*VO; --bench → WVB1
+//   RNB1 — RNN NormalBP leaf → RNBO; --bench → WVB1
+//   RNV1 — Volume RNN NormalBP → RNVO; --bench → WVB1
+//   LSB1 — LSTM NormalBP leaf → LSBO; --bench → WVB1
+//   LSV1 — Volume LSTM NormalBP → LSVO; --bench → WVB1
+//   SQB1 — Sequential NormalBP leaf → SQBO; --bench → WVB1
+//   SQV1 — Volume Sequential NormalBP → SQVO; --bench → WVB1
+//   REB1 — Residual NormalBP leaf → REBO; --bench → WVB1
+//   REV1 — Volume Residual NormalBP → REVO; --bench → WVB1
+//   STKB — Stack NestedStack-of-Dense NormalBP leaf → STKO; --bench → WVB1
+//   STKV — Volume Stack NestedStack-of-Dense NormalBP → STVO; --bench → WVB1
+//   MBB1/MBV1 Mamba; MCB1/MCV1 Meta; GDB1/GDV1 GDN; KMB1/KMV1 KMeans;
+//   PNB1/PNV1 Parallel; PPB1 poly; NBL1 edges
+
+#include "volume_fwd.hpp"
 
 #include "welvet/gaps.hpp"
 #include "welvet/cuda/device.hpp"
@@ -1181,8 +1213,8 @@ static void usage() {
                "welvet_dense_fwd (welvet.cuda)\n"
                "  --version / --identity / --gaps\n"
                "  --bench=N   leaf forward magics → WVB1/WVB2 + response\n"
-               "  stdin magic: WVD3 | WVR1 | WVL1 | WSM1 | WVS1 | WEM1 | WVM1 | "
-               "WVC1/2/3 | WVT1/2/3 | WRN1 | WLS1 | WSQ1 | WRE1 | "
+               "  stdin magic: WVD3 | WDB1 | WVN1 | WVR1 | WVL1 | WSM1 | WVS1 | WEM1 | WVM1 | "
+               "WHB1→WHBO | WHV1→WHVO | WVC1/2/3 | WVT1/2/3 | WRN1 | WLS1 | WSQ1 | WRE1 | "
                "WMB1 | WMC1 | WGD1 | WKM1 | WPL1 | WSX1 | …\n");
 }
 
@@ -1232,6 +1264,54 @@ int main(int argc, char** argv) {
   if (std::memcmp(magic, "WVD1", 4) == 0) return run_dense(true, false, false, bench_iters);
   if (std::memcmp(magic, "WVD2", 4) == 0) return run_dense(false, true, false, bench_iters);
   if (std::memcmp(magic, "WVD3", 4) == 0) return run_dense(false, false, true, bench_iters);
+  if (std::memcmp(magic, "WDB1", 4) == 0) return run_dense_normalbp(bench_iters);
+  if (std::memcmp(magic, "WVN1", 4) == 0) return run_volume_normalbp(bench_iters);
+  if (std::memcmp(magic, "WRB1", 4) == 0) return run_rmsnorm_normalbp(bench_iters);
+  if (std::memcmp(magic, "WRV1", 4) == 0) return run_volume_rmsnorm_normalbp(bench_iters);
+  if (std::memcmp(magic, "WLB1", 4) == 0) return run_layernorm_normalbp(bench_iters);
+  if (std::memcmp(magic, "WLV1", 4) == 0) return run_volume_layernorm_normalbp(bench_iters);
+  if (std::memcmp(magic, "WXB1", 4) == 0) return run_softmax_normalbp(bench_iters);
+  if (std::memcmp(magic, "WXV1", 4) == 0) return run_volume_softmax_normalbp(bench_iters);
+  if (std::memcmp(magic, "WSB1", 4) == 0) return run_swiglu_normalbp(bench_iters);
+  if (std::memcmp(magic, "WSV1", 4) == 0) return run_volume_swiglu_normalbp(bench_iters);
+  if (std::memcmp(magic, "WEB1", 4) == 0) return run_embedding_normalbp(bench_iters);
+  if (std::memcmp(magic, "WEV1", 4) == 0) return run_volume_embedding_normalbp(bench_iters);
+  if (std::memcmp(magic, "WHB1", 4) == 0) return run_mha_normalbp(bench_iters);
+  if (std::memcmp(magic, "WHV1", 4) == 0) return run_volume_mha_normalbp(bench_iters);
+  if (std::memcmp(magic, "C1B1", 4) == 0) return run_cnn1_normalbp(bench_iters);
+  if (std::memcmp(magic, "C2B1", 4) == 0) return run_cnn2_normalbp(bench_iters);
+  if (std::memcmp(magic, "C3B1", 4) == 0) return run_cnn3_normalbp(bench_iters);
+  if (std::memcmp(magic, "C1V1", 4) == 0) return run_volume_cnn1_normalbp(bench_iters);
+  if (std::memcmp(magic, "C2V1", 4) == 0) return run_volume_cnn2_normalbp(bench_iters);
+  if (std::memcmp(magic, "C3V1", 4) == 0) return run_volume_cnn3_normalbp(bench_iters);
+  if (std::memcmp(magic, "T1B1", 4) == 0) return run_convt1_normalbp(bench_iters);
+  if (std::memcmp(magic, "T2B1", 4) == 0) return run_convt2_normalbp(bench_iters);
+  if (std::memcmp(magic, "T3B1", 4) == 0) return run_convt3_normalbp(bench_iters);
+  if (std::memcmp(magic, "T1V1", 4) == 0) return run_volume_convt1_normalbp(bench_iters);
+  if (std::memcmp(magic, "T2V1", 4) == 0) return run_volume_convt2_normalbp(bench_iters);
+  if (std::memcmp(magic, "T3V1", 4) == 0) return run_volume_convt3_normalbp(bench_iters);
+  if (std::memcmp(magic, "RNB1", 4) == 0) return run_rnn_normalbp(bench_iters);
+  if (std::memcmp(magic, "RNV1", 4) == 0) return run_volume_rnn_normalbp(bench_iters);
+  if (std::memcmp(magic, "LSB1", 4) == 0) return run_lstm_normalbp(bench_iters);
+  if (std::memcmp(magic, "LSV1", 4) == 0) return run_volume_lstm_normalbp(bench_iters);
+  if (std::memcmp(magic, "SQB1", 4) == 0) return run_sequential_normalbp(bench_iters);
+  if (std::memcmp(magic, "SQV1", 4) == 0) return run_volume_sequential_normalbp(bench_iters);
+  if (std::memcmp(magic, "REB1", 4) == 0) return run_residual_normalbp(bench_iters);
+  if (std::memcmp(magic, "REV1", 4) == 0) return run_volume_residual_normalbp(bench_iters);
+  if (std::memcmp(magic, "STKB", 4) == 0) return run_stack_normalbp(bench_iters);
+  if (std::memcmp(magic, "STKV", 4) == 0) return run_volume_stack_normalbp(bench_iters);
+  if (std::memcmp(magic, "MBB1", 4) == 0) return run_mamba_normalbp(bench_iters);
+  if (std::memcmp(magic, "MBV1", 4) == 0) return run_volume_mamba_normalbp(bench_iters);
+  if (std::memcmp(magic, "MCB1", 4) == 0) return run_metacognition_normalbp(bench_iters);
+  if (std::memcmp(magic, "MCV1", 4) == 0) return run_volume_metacognition_normalbp(bench_iters);
+  if (std::memcmp(magic, "GDB1", 4) == 0) return run_gdn_normalbp(bench_iters);
+  if (std::memcmp(magic, "GDV1", 4) == 0) return run_volume_gdn_normalbp(bench_iters);
+  if (std::memcmp(magic, "KMB1", 4) == 0) return run_kmeans_normalbp(bench_iters);
+  if (std::memcmp(magic, "KMV1", 4) == 0) return run_volume_kmeans_normalbp(bench_iters);
+  if (std::memcmp(magic, "PNB1", 4) == 0) return run_parallel_normalbp(bench_iters);
+  if (std::memcmp(magic, "PNV1", 4) == 0) return run_volume_parallel_normalbp(bench_iters);
+  if (std::memcmp(magic, "PPB1", 4) == 0) return run_parallel_poly_train(bench_iters);
+  if (std::memcmp(magic, "NBL1", 4) == 0) return run_normalbp_child(bench_iters);
   if (std::memcmp(magic, "WVR1", 4) == 0) return run_rmsnorm(bench_iters);
   if (std::memcmp(magic, "WVL1", 4) == 0) return run_layernorm(bench_iters);
   if (std::memcmp(magic, "WSM1", 4) == 0) return run_softmax(bench_iters);

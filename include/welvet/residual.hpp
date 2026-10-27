@@ -32,4 +32,16 @@ Status new_configured(const Config& cfg, DType dt, Activation child_act, const f
 // F via CUDA dense::forward_f32; skip-add via host f64 round-trip (Go AsFloat64+FromFloat64).
 Status forward(Layer& layer, const TensorF32& input, TensorF32* pre, TensorF32* post);
 
+int grad_w_size(const Layer& layer);
+
+// NormalBP: recompute F tape; reverse Dense; gradIn = ∂F/∂x + gradOut (skip).
+// Top-level pre unused (may be empty).
+Status backward_f32(Layer& layer, const TensorF32& grad_out, const TensorF32& input,
+                    const TensorF32& pre, TensorF32* grad_in, TensorF32* grad_w);
+
+Status apply_grad_sgd(Layer* layer, const TensorF32& dW, double lr);
+
+// Export loom pack Depth×[Dim×Dim] as f32.
+Status export_packed_f32(const Layer& layer, float* dst);
+
 } // namespace welvet::residual

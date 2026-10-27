@@ -58,6 +58,13 @@ bool dtype_supported_cuda_forward(DType dt);
 // FormatNone Dense forward on CUDA with resident W.
 Status forward_f32(const Layer& layer, const TensorF32& input, TensorF32* pre, TensorF32* post);
 
+// Dense NormalBP backward: dX / dW via CUDA f64 MatVecᵀ + outer + act′.
+Status backward_f32(const Layer& layer, const TensorF32& grad_out, const TensorF32& input,
+                    const TensorF32& pre, TensorF32* grad_in, TensorF32* grad_w);
+
+// FormatNone SGD: W ← W − lr·dW, then invalidate resident GPU mirror.
+Status apply_grad_sgd(Layer* layer, const TensorF32& dW, double lr);
+
 Status sync_gpu_from_weights(const Layer& layer, int batch);
 
 } // namespace welvet::dense

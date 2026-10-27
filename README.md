@@ -8,12 +8,12 @@ It will run directly from C++ and through a stable C ABI. Go Welvet can later de
 
 | | |
 |--|--|
-| **Version** | **`0.27`** |
-| **Engine board** | **27 / 100** (same 10 categories as Go Welvet) |
+| **Version** | **`0.51`** |
+| **Engine board** | **51 / 100** (same 10 categories as Go Welvet) |
 | **Compute** | NVIDIA GPU (CUDA) — primary · CPU / Metal / QNN siblings remain separate repos — never implied |
 | **Parity reference** | [welvet](https://github.com/openfluke/welvet) Go **v1.2.0** (100/100) |
 | **CPU sibling** | [welvet.cpp](https://github.com/openfluke/welvet.cpp) **0.67** (semantics/wire to mirror — **score not inherited**) |
-| **Validation** | [w2a](https://github.com/openfluke/w2a) `Go_v_Cuda` leaf FormatNone×34 forward (Dense…Parallel + seqmix) |
+| **Validation** | [w2a](https://github.com/openfluke/w2a) `Go_v_Cuda` leaf FormatNone×34 forward + NormalBP (`TestGoVCudaNormalBP`) |
 
 **This README is the runway.** Every unchecked cell is planned CUDA work. Tick ⬜ → 🚧 → ✅ here as gates land. **Training port detail** (per-mode × layer evidence, wire names, version log) lives in [docs/TRAINING_CHECKLIST.md](docs/TRAINING_CHECKLIST.md) — tick there as NormalBP / TrainModes land; this README keeps the mode summary table. [GAPS.md](GAPS.md) is the machine-oriented census mirror; [VERSIONING.md](VERSIONING.md) is the `0.x` formula. Pure-CUDA contract: [docs/CUDA_ONLY.md](docs/CUDA_ONLY.md).
 
@@ -22,18 +22,19 @@ It will run directly from C++ and through a stable C ABI. Go Welvet can later de
 ```bash
 ./scripts/build_linux.sh
 ./build/example_cuda_smoke
-./build/welvet_dense_fwd --version   # 0.27
+./build/welvet_dense_fwd --version   # 0.51
 ./build/welvet_dense_fwd --identity
 ./build/welvet_dense_fwd --gaps
-./scripts/linux_build_w2a.sh --leaf-fwd-all   # all leaf FormatNone forward suites
+./scripts/linux_build_w2a.sh --leaf-fwd-all
+./scripts/linux_build_w2a.sh --normalbp-all
 ```
 
 | Slice | Status |
 |---|:---:|
 | Linux x86_64 CMake → `libwelvet_cuda.so` | ✅ |
-| Dense FormatNone×34 forward | ✅ |
-| Leaf FormatNone forward ×22 layers + seqmix | ✅ Stack deferred to NormalBP |
-| Dense / layer NormalBP, volume, train modes, systems, model | ⬜ |
+| Leaf FormatNone forward ×23 + seqmix | ✅ |
+| NormalBP leaf+volume ×23 layers | ✅ `TestGoVCudaNormalBP` |
+| StepBP / Mesh / Tween* / CamSync / systems / model | ⬜ |
 
 ---
 
@@ -175,16 +176,16 @@ Identical ten categories / weights as Go Welvet. Credit only from **this** CUDA 
 | # | Category (Go board) | Wt | CUDA today | Status | Earned |
 |---:|---|---:|---|:---:|---:|
 | 1 | **Foundation** — `core`, `weights`, quant, CUDA compute base, tiling policy | 15 | dtype/act 3 + FormatNone×34 store 4 + CUDA MatVec path 2; quant/tiling open | 🚧 | **9** |
-| 2 | **Dense MatVec** — FormatNone×34 + quants; fwd/bwd/update on CUDA | 15 | FormatNone forward 4; bwd/SGD/quant open | 🚧 | **4** |
-| 3 | **Transformer stack** — MHA, SwiGLU, norms, Softmax, Emb, Sequential, Residual, seqmix | 14 | leaf FormatNone forward all kinds (≈½); NormalBP open | 🚧 | **7** |
-| 4 | **CNN / RNN / LSTM** | 6 | CNN1–3 + RNN + LSTM leaf fwd (≈½); NormalBP open | 🚧 | **3** |
-| 5 | **Extended layers** — GDN, ConvT1–3, Mamba, KMeans, Parallel, Metacognition | 7 | leaf fwd ConvT/Mamba/KMeans/Parallel/Meta/GDN; Stack open | 🚧 | **4** |
-| 6 | **Runtime + architecture** — volumetric grid, forward, backward, training, step/mesh | 8 | Grid dims stub only | ⬜ | **0** |
+| 2 | **Dense MatVec** — FormatNone×34 + quants; fwd/bwd/update on CUDA | 15 | FormatNone fwd+bwd+SGD 12; packed quant open | 🚧 | **12** |
+| 3 | **Transformer stack** — MHA, SwiGLU, norms, Softmax, Emb, Sequential, Residual, seqmix | 14 | leaf FormatNone + NormalBP leaf/vol signed | ✅ | **14** |
+| 4 | **CNN / RNN / LSTM** | 6 | CNN1–3 + RNN + LSTM leaf fwd + NormalBP | ✅ | **6** |
+| 5 | **Extended layers** — GDN, ConvT1–3, Mamba, KMeans, Parallel, Metacognition | 7 | leaf fwd + NormalBP (incl. Stack); seqmix metadata | ✅ | **7** |
+| 6 | **Runtime + architecture** — volumetric grid, forward, backward, training, step/mesh | 8 | Dense-family volume NormalBP Grid; Step/Mesh open | 🚧 | **3** |
 | 7 | **Systems** — dna, evolution, tween, tanhi, telemetry | 5 | — | ⬜ | **0** |
 | 8 | **Model / IO** — tokenizer, entity, transformer, sampling, hf | 8 | — | ⬜ | **0** |
-| 9 | **Training credit** — 29 modes + cameral BranchModes / CamSync | 8 | TrainMode enum only | ⬜ | **0** |
+| 9 | **Training credit** — 29 modes + cameral BranchModes / CamSync | 8 | NormalBP mode signed; 28 modes open | 🚧 | **0** |
 | 10 | **Peak fused / no host ALU** — fused CUDA kernels, decoder fuse, provenance | 14 | — | ⬜ | **0** |
-| | **Total → version** | **100** | | **🚧** | **27 / 100 → `0.27`** |
+| | **Total → version** | **100** | | **🚧** | **51 / 100 → `0.51`** |
 
 **Path to 1.0:** same order Go used / welvet.cpp is following — Dense FormatNone + NormalBP → layers → Step/Mesh/Tween* → Systems + Model/IO → CamSync + peak fused CUDA. welvet.cpp’s ✅ list is the **port order**, not transferred credit.
 
@@ -372,30 +373,30 @@ Packed layouts. Row **None** = FormatNone + DType (not “FP32 master”).
 
 | ID | Layer | Forward target | Backward target | CUDA F | CUDA B |
 |---:|---|---|---|:---:|:---:|
-| 0 | **Dense** | GEMV/GEMM, bias, activation | dX, dW, act'; ApplyGradSGD | ✅ | ⬜ |
-| 1 | **MultiHeadAttention** | Q/K/V/O, attention, masks, RoPE, cache | Proj + attn + RoPE grads (ModeSelf) | ✅ | ⬜ |
-| 2 | **SwiGLU** | Gate/up/down, SiLU product | All projs + product/SiLU′ | ✅ | ⬜ |
-| 3 | **RMSNorm** | RMS + scale | dX + scale grad | ✅ | ⬜ |
-| 4 | **CNN1** | 1D conv | dX, kernel grads | ✅ | ⬜ |
-| 5 | **CNN2** | 2D conv | dX, kernel grads | ✅ | ⬜ |
-| 6 | **CNN3** | 3D conv | dX, kernel grads | ✅ | ⬜ |
-| 7 | **RNN** | Recurrent + state | BPTT + state grads | ✅ | ⬜ |
-| 8 | **LSTM** | Gates + h/c | Gate/param/h/c grads | ✅ | ⬜ |
-| 9 | **LayerNorm** | Mean/var, scale, bias | dX, scale/bias | ✅ | ⬜ |
-| 10 | **ConvTransposed1D** | 1D transposed | dX, kernel | ✅ | ⬜ |
-| 11 | **ConvTransposed2D** | 2D transposed | dX, kernel | ✅ | ⬜ |
-| 12 | **ConvTransposed3D** | 3D transposed | dX, kernel | ✅ | ⬜ |
-| 13 | **Embedding** | Gather | Scatter/reduction; defined token dX | ✅ | ⬜ |
-| 14 | **KMeans** | Soft assignment + centroids | Declared differentiable paths | ✅ | ⬜ |
-| 15 | **Softmax** | Standard/grid/temp/variants | JVPs (dX; weightless) | ✅ | ⬜ |
-| 16 | **Parallel** | Branches, routing, combine, cameral | Branch credit + BranchModes | ✅ | ⬜ |
-| 17 | **Sequential** | Ordered child chain | Reverse child credit | ✅ | ⬜ |
-| 18 | **Residual** | F(x) + skip | F reverse + skip grad | ✅ | ⬜ |
-| 19 | **Metacognition** | Observed compute + rules | lastGate-scale + Observed bwd | ✅ | ⬜ |
-| 20 | **Mamba** | Selective SSM scan | Declared BPTT + projs | ✅ | ⬜ |
-| 21 | **GDN** | Gated DeltaNet | Truncated-BPTT contract (f32-first) | ✅ | ⬜ |
-| 22 | **Stack** | Heterogeneous nested chain | Nested child credit | ⬜ | ⬜ |
-| helper | **seqmix** | Sequence-mixing helpers | Helper grads | ✅ | ⬜ |
+| 0 | **Dense** | GEMV/GEMM, bias, activation | dX, dW, act'; ApplyGradSGD | ✅ | ✅ |
+| 1 | **MultiHeadAttention** | Q/K/V/O, attention, masks, RoPE, cache | Proj + attn + RoPE grads (ModeSelf) | ✅ | ✅ |
+| 2 | **SwiGLU** | Gate/up/down, SiLU product | All projs + product/SiLU′ | ✅ | ✅ |
+| 3 | **RMSNorm** | RMS + scale | dX + scale grad | ✅ | ✅ |
+| 4 | **CNN1** | 1D conv | dX, kernel grads | ✅ | ✅ |
+| 5 | **CNN2** | 2D conv | dX, kernel grads | ✅ | ✅ |
+| 6 | **CNN3** | 3D conv | dX, kernel grads | ✅ | ✅ |
+| 7 | **RNN** | Recurrent + state | BPTT + state grads | ✅ | ✅ |
+| 8 | **LSTM** | Gates + h/c | Gate/param/h/c grads | ✅ | ✅ |
+| 9 | **LayerNorm** | Mean/var, scale, bias | dX, scale/bias | ✅ | ✅ |
+| 10 | **ConvTransposed1D** | 1D transposed | dX, kernel | ✅ | ✅ |
+| 11 | **ConvTransposed2D** | 2D transposed | dX, kernel | ✅ | ✅ |
+| 12 | **ConvTransposed3D** | 3D transposed | dX, kernel | ✅ | ✅ |
+| 13 | **Embedding** | Gather | Scatter/reduction; defined token dX | ✅ | ✅ |
+| 14 | **KMeans** | Soft assignment + centroids | Declared differentiable paths | ✅ | ✅ |
+| 15 | **Softmax** | Standard/grid/temp/variants | JVPs (dX; weightless) | ✅ | ✅ |
+| 16 | **Parallel** | Branches, routing, combine, cameral | Branch credit + BranchModes | ✅ | ✅ |
+| 17 | **Sequential** | Ordered child chain | Reverse child credit | ✅ | ✅ |
+| 18 | **Residual** | F(x) + skip | F reverse + skip grad | ✅ | ✅ |
+| 19 | **Metacognition** | Observed compute + rules | lastGate-scale + Observed bwd | ✅ | ✅ |
+| 20 | **Mamba** | Selective SSM scan | Declared BPTT + projs | ✅ | ✅ |
+| 21 | **GDN** | Gated DeltaNet | Truncated-BPTT contract (f32-first) | ✅ | ✅ |
+| 22 | **Stack** | Heterogeneous nested chain | Nested child credit | ✅ | ✅ |
+| helper | **seqmix** | Sequence-mixing helpers | Helper grads | ✅ | ✅ |
 
 ### Layer acceptance details
 
@@ -450,7 +451,7 @@ Tick **Inside node** (`1×1×1`) and **3D volumetric** separately. **Signed** = 
 
 | # | TrainMode | Family | Inside node | 3D volumetric | Signed | Ver |
 |---|---|---|:---:|:---:|:---:|---|
-| 1 | NormalBP | BP | ⬜ | ⬜ | ⬜ | |
+| 1 | NormalBP | BP | ✅ | ✅ | ✅ | 0.51 |
 | 2 | StepBP | BP | ⬜ | ⬜ | ⬜ | |
 | 3 | MeshBP | BP | ⬜ | ⬜ | ⬜ | |
 | 4 | Tween | Tween | ⬜ | ⬜ | ⬜ | |
@@ -614,9 +615,9 @@ Measure cold compile, initial upload (`cuda_mount`), warm resident (`cuda_exec`)
 |---|---|:---:|
 | **M0** — CUDA host + this README runway | Device/library/buffer/smoke + full Go inventory checklist | ✅ |
 | **M1** — Dense FormatNone forward on CUDA | w2a `go_v_cuda` exact_bit×34 + Go/C++/CUDA speed | ✅ |
-| **M2** — Dense NormalBP resident | Multi-step train parity | ⬜ |
-| **M3** — Dtype / quant breadth | ×34 (+ quants or honest gaps) | 🚧 FormatNone×34 leaf fwd; quants open |
-| **M4** — Layer breadth | Transformer → CNN/RNN → extended leaf fwd | ✅ Stack→NormalBP |
+| **M2** — Dense NormalBP resident | Multi-step train parity leaf+vol | ✅ |
+| **M3** — Dtype / quant breadth | ×34 (+ quants or honest gaps) | 🚧 FormatNone×34; quants open |
+| **M4** — Layer breadth | All 23 layers leaf fwd + NormalBP | ✅ |
 | **M5** — Full volumetric runtime | Grid + Step/Mesh + credit families | ⬜ |
 | **M6** — Systems + Model/IO + Lucy | DNA…telemetry, ENTITY/HF/…, LPD | ⬜ |
 | **M7** — Peak fused CUDA | Minimal host ALU + decoder fuse | ⬜ |

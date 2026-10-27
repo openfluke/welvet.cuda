@@ -159,4 +159,46 @@ Status forward(const Layer& layer, const TensorF32& input, TensorF32* pre, Tenso
   return Status::Ok();
 }
 
+Status backward_f32(const Layer& layer, const TensorF32& grad_out, const TensorF32& /*input*/,
+                    const TensorF32& pre, TensorF32* grad_in, TensorF32* grad_w) {
+  if (!grad_in || !grad_w) {
+    return Status::Err(StatusCode::InvalidArgument, "softmax: nil grad_in/grad_w");
+  }
+  Config cfg = layer.cfg;
+  if (auto st = validate(&cfg); !st) return st;
+
+  Layout lay;
+  if (auto st = parse_layout(cfg, pre, &lay); !st) {
+    if (auto st2 = parse_layout(cfg, grad_out, &lay); !st2) return st2;
+  }
+  if (grad_out.data.size() < static_cast<std::size_t>(lay.n) ||
+      pre.data.size() < static_cast<std::size_t>(lay.n)) {
+    return Status::Err(StatusCode::InvalidArgument, "softmax: nil/short gradOut/pre");
+  }
+
+  std::vector<int32_t> mask;
+  mask.reserve(cfg.mask.size());
+  for (bool v : cfg.mask) {
+    mask.push_back(v ? 1 : 0);
+  }
+
+  grad_in->shape = lay.shape;
+  grad_in->data.assign(static_cast<std::size_t>(lay.n), 0.0f);
+  grad_w->shape.clear();
+  grad_w->data.clear();
+
+  if (auto st = cuda::init_default_device(); !st) return st;
+  return cuda::launch_softmax_backward(
+      pre.data.data(), grad_out.data.data(), grad_in->data.data(), lay.rows, lay.cols, lay.n,
+      static_cast<int>(cfg.kind), lay.temp, mask.empty() ? nullptr : mask.data(),
+      static_cast<int>(mask.size()));
+}
+
+Status apply_grad_sgd(Layer* layer, const TensorF32& /*dW*/, double /*lr*/) {
+  if (!layer) {
+    return Status::Err(StatusCode::InvalidArgument, "softmax: ApplyGradSGD nil layer");
+  }
+  return Status::Ok();
+}
+
 } // namespace welvet::softmax

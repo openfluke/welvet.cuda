@@ -27,6 +27,10 @@ struct ResidentDense {
 Status resident_mount(ResidentDense* r, const double* W_f64, const double* bias_f64, int bias_len,
                       int batch, int out, int in, Activation act);
 Status resident_execute(ResidentDense* r, const float* x_host, float* pre_host, float* post_host);
+// Dense NormalBP: act′ → MatVecᵀ → outer (HW f64 accumulate, Go FormatNone contract).
+Status resident_backward(ResidentDense* r, const float* grad_out, const float* input,
+                         const float* pre, float* grad_in, float* grad_w, bool linear = false);
 void resident_release(ResidentDense* r);
 
 } // namespace welvet::cuda
+

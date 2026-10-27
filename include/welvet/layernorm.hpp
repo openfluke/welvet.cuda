@@ -26,4 +26,10 @@ Status new_configured(const Config& cfg, DType dt, const float* gamma_init, cons
 // Forward on CUDA: pre = (x−μ)/σ; post = γ⊙x̂ + β.
 Status forward(Layer& layer, const TensorF32& input, TensorF32* pre, TensorF32* post);
 
+// NormalBP: dγ|dβ and dx; pre must be x̂ from forward.
+Status backward_f32(const Layer& layer, const TensorF32& grad_out, const TensorF32& input,
+                    const TensorF32& pre, TensorF32* grad_in, TensorF32* grad_w);
+
+Status apply_grad_sgd(Layer* layer, const TensorF32& dW, double lr);
+
 } // namespace welvet::layernorm

@@ -11,4 +11,9 @@ namespace welvet::cuda {
 Status launch_embedding_gather(const float* tokens_host, const float* W_f32, float* out_host,
                                int n_tok, int emb, int vocab, int in_last, Activation act);
 
+// Embedding NormalBP scatter dW: for each (row,col), sum grad_out[t,col] over tokens
+// whose id == row (token order 0..n_tok-1). Matches Go/cpp/Metal exact_bit.
+Status launch_embedding_scatter(const float* tokens_host, const float* grad_out_host,
+                                float* dW_host, int n_tok, int emb, int vocab, int in_last);
+
 } // namespace welvet::cuda
