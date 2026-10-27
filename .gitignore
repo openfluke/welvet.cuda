@@ -1,0 +1,20 @@
+/build/
+/build-*/
+/cmake-build-*/
+/.cache/
+compile_commands.json
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+.DS_Store
+src/.write_ok
+
+# Local Go↔CUDA snapshot logs (live under w2a/logs/; ignore if dropped here)
+/linux.txt
+/linux_amd64.txt
+
+# Local CUDA toolkit extract (not shipped)
+.deps/
