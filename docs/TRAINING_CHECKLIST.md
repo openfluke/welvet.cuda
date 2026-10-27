@@ -9,7 +9,8 @@ Canonical enum: Go `layers/parallel/train_mode.go` (`TrainMode`).
 and [`welvet.cpp/docs/TRAINING_CHECKLIST.md`](../../welvet.cpp/docs/TRAINING_CHECKLIST.md).
 Same cases / wires / column meanings; status here is **CUDA** only. metal/cpp checkmarks do **not** transfer credit.
 
-**Current engine:** `0.00` (M0 host scaffold — **0 / 100** on the engine board). No training rows signed yet.
+**Current engine:** `0.13` (M1 Dense FormatNone forward — **13 / 100** on the engine board).
+Dense forward signed via w2a `TestGoVCudaDenseForward` (exact_bit×34 + speed). **No training rows signed yet.**
 
 ---
 
@@ -27,11 +28,23 @@ Validation lives in sibling **w2a** (`go_v_cuda`), not in this tree — same pat
 ```sh
 ./scripts/build_linux.sh
 ./scripts/linux_build_w2a.sh --smoke
+./scripts/linux_build_w2a.sh --dense-fwd   # Dense FormatNone×34 forward (signed)
 # as suites land:
 # ./scripts/linux_build_w2a.sh --dense-train
 # ./scripts/linux_build_w2a.sh --normalbp-all
 # ./scripts/linux_build_w2a.sh --training-all
 ```
+
+## w2a Go↔CUDA (Dense FormatNone forward) — signed
+
+Run: `./scripts/linux_build_w2a.sh --dense-fwd`  
+Wire: `WVD3`/`WVO1` (Dense forward). Exact tensor bits vs Go. Speed: Go / C++ / CUDA warm-exec.
+
+| # | Case | Status | Notes |
+|---|---|:---:|---|
+| 1 | Leaf Float32 identity+bias | [x] | exact_bit |
+| 2 | Leaf Float32 ReLU | [x] | exact_bit |
+| 3 | Leaf × all 34 FormatNone dtypes | [x] | exact_bit 100%; CUDA warm-exec wins 34/34 (GTX 1650 SUPER) |
 
 ## w2a Go↔CUDA (Freeze / Shadow / Adversarial / Memory / Cameral / CamSync) — sign-off evidence
 

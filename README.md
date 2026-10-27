@@ -8,26 +8,27 @@ It will run directly from C++ and through a stable C ABI. Go Welvet can later de
 
 | | |
 |--|--|
-| **Version** | **`0.00`** |
-| **Engine board** | **0 / 100** (same 10 categories as Go Welvet — start unchecked) |
+| **Version** | **`0.13`** |
+| **Engine board** | **13 / 100** (same 10 categories as Go Welvet) |
 | **Compute** | NVIDIA GPU (CUDA) — primary · CPU / Metal / QNN siblings remain separate repos — never implied |
 | **Parity reference** | [welvet](https://github.com/openfluke/welvet) Go **v1.2.0** (100/100) |
 | **CPU sibling** | [welvet.cpp](https://github.com/openfluke/welvet.cpp) **0.67** (semantics/wire to mirror — **score not inherited**) |
-| **Validation** | [w2a](https://github.com/openfluke/w2a) planned `Go_v_Cuda` (determinism + speed) |
+| **Validation** | [w2a](https://github.com/openfluke/w2a) `Go_v_Cuda` Dense forward exact_bit×34 + speed |
 
 **This README is the runway.** Every unchecked cell is planned CUDA work. Tick ⬜ → 🚧 → ✅ here as gates land. **Training port detail** (per-mode × layer evidence, wire names, version log) lives in [docs/TRAINING_CHECKLIST.md](docs/TRAINING_CHECKLIST.md) — tick there as NormalBP / TrainModes land; this README keeps the mode summary table. [GAPS.md](GAPS.md) is the machine-oriented census mirror; [VERSIONING.md](VERSIONING.md) is the `0.x` formula. Pure-CUDA contract: [docs/CUDA_ONLY.md](docs/CUDA_ONLY.md).
 
-### What exists today (M0 host only — not engine credit)
+### What exists today (M0 host + M1 Dense FormatNone forward)
 
 ```bash
 ./scripts/build_linux.sh
 ./build/example_cuda_smoke          # device + kernel launch + buffer RT
-./build/welvet_dense_fwd --version   # 0.00
+./build/welvet_dense_fwd --version   # 0.13
 ./build/welvet_dense_fwd --identity  # cuda:<NVIDIA GPU>…
 ./build/welvet_dense_fwd --gaps
+./scripts/linux_build_w2a.sh --dense-fwd   # Go↔CUDA exact_bit×34 + speed
 ```
 
-| M0 host | Status |
+| Slice | Status |
 |---|:---:|
 | Linux x86_64 CMake → `libwelvet_cuda.so` | ✅ |
 | `cudaDevice` probe + runtime identity | ✅ |
@@ -35,7 +36,8 @@ It will run directly from C++ and through a stable C ABI. Go Welvet can later de
 | Device buffer upload/download | ✅ |
 | Smoke kernel `welvet_smoke_saxpy` | ✅ |
 | C ABI version / init / gaps | ✅ |
-| Dense / layers / volume / train / systems / model | ⬜ |
+| Dense FormatNone×34 forward (HW f64 MatVec) | ✅ `go_v_cuda` exact_bit |
+| Dense NormalBP / other layers / volume / train / systems / model | ⬜ |
 
 ---
 
@@ -176,8 +178,8 @@ Identical ten categories / weights as Go Welvet. Credit only from **this** CUDA 
 
 | # | Category (Go board) | Wt | CUDA today | Status | Earned |
 |---:|---|---:|---|:---:|---:|
-| 1 | **Foundation** — `core`, `weights`, quant, CUDA compute base, tiling policy | 15 | dtype/activate enums; no FormatNone×34 CUDA | ⬜ | **0** |
-| 2 | **Dense MatVec** — FormatNone×34 + quants; fwd/bwd/update on CUDA | 15 | shader stub only | ⬜ | **0** |
+| 1 | **Foundation** — `core`, `weights`, quant, CUDA compute base, tiling policy | 15 | dtype/act 3 + FormatNone×34 store 4 + CUDA MatVec path 2; quant/tiling open | 🚧 | **9** |
+| 2 | **Dense MatVec** — FormatNone×34 + quants; fwd/bwd/update on CUDA | 15 | FormatNone forward 4; bwd/SGD/quant open | 🚧 | **4** |
 | 3 | **Transformer stack** — MHA, SwiGLU, norms, Softmax, Emb, Sequential, Residual, seqmix | 14 | — | ⬜ | **0** |
 | 4 | **CNN / RNN / LSTM** | 6 | — | ⬜ | **0** |
 | 5 | **Extended layers** — GDN, ConvT1–3, Mamba, KMeans, Parallel, Metacognition | 7 | — | ⬜ | **0** |
@@ -186,7 +188,7 @@ Identical ten categories / weights as Go Welvet. Credit only from **this** CUDA 
 | 8 | **Model / IO** — tokenizer, entity, transformer, sampling, hf | 8 | — | ⬜ | **0** |
 | 9 | **Training credit** — 29 modes + cameral BranchModes / CamSync | 8 | TrainMode enum only | ⬜ | **0** |
 | 10 | **Peak fused / no host ALU** — fused CUDA kernels, decoder fuse, provenance | 14 | — | ⬜ | **0** |
-| | **Total → version** | **100** | | **⬜** | **0 / 100 → `0.00`** |
+| | **Total → version** | **100** | | **🚧** | **13 / 100 → `0.13`** |
 
 **Path to 1.0:** same order Go used / welvet.cpp is following — Dense FormatNone + NormalBP → layers → Step/Mesh/Tween* → Systems + Model/IO → CamSync + peak fused CUDA. welvet.cpp’s ✅ list is the **port order**, not transferred credit.
 
@@ -198,14 +200,14 @@ Identical ten categories / weights as Go Welvet. Credit only from **this** CUDA 
 
 | Go reference | CUDA rebuild target | Status |
 |---|---|:---:|
-| `core/` | Tensor representation, all 34 dtypes, activations, layer IDs, execution config | 🚧 enum/stub |
-| `weights/` | Dtype-native parameter storage, MatVec/transpose, grad/update, snapshots — **cudaMalloc buffer resident** | ⬜ |
+| `core/` | Tensor representation, all 34 dtypes, activations, layer IDs, execution config | 🚧 dtype/act + Dense gates |
+| `weights/` | Dtype-native parameter storage, MatVec/transpose, grad/update, snapshots — **cudaMalloc buffer resident** | 🚧 FormatNone×34 + resident f64 MatVec fwd |
 | `quant/` | All 20 packed formats Pack/Unpack/MatVec on CUDA (or honest unsupported) | ⬜ |
 | `tiling/` | Threadgroup / grid dispatch policy, tails, workspace budgets, deterministic scheduling | ⬜ |
 | `simd/` | N/A as Plan 9 — replaced by CUDA kernels (do not ship host AVX as “CUDA”) | N/A |
 | `webgpu/` | Reference for device semantics only — implement as CUDA, not WGSL/Metal | N/A |
 | `fusedgpu/` | Decoder/op fusion with resident intermediates + execution provenance on CUDA | ⬜ |
-| CUDA runtime | Device, library, pipeline, command buffer, sync, error surface | 🚧 M0 host |
+| CUDA runtime | Device, library, pipeline, command buffer, sync, error surface | 🚧 M0 host + Dense MatVec |
 
 ### Architecture and runtime — §6
 
@@ -289,52 +291,52 @@ FormatNone storage. CUDA column = validated on-device path (not host decode pret
 
 | # | DType | Pack/RT | CUDA F | CUDA B | CUDA update | Notes |
 |--:|-------|:------:|:------:|:------:|:------:|-------|
-| 0 | Float64 | ⬜ | ⬜ | ⬜ | ⬜ | |
-| 1 | Float32 | ⬜ | ⬜ | ⬜ | ⬜ | likely first ALU |
-| 2 | Float16 | ⬜ | ⬜ | ⬜ | ⬜ | native CUDA half |
-| 3 | BFloat16 | ⬜ | ⬜ | ⬜ | ⬜ | |
-| 4 | FP8E4M3 | ⬜ | ⬜ | ⬜ | ⬜ | |
-| 5 | FP8E5M2 | ⬜ | ⬜ | ⬜ | ⬜ | |
-| 6 | Int64 | ⬜ | ⬜ | ⬜ | ⬜ | |
-| 7 | Int32 | ⬜ | ⬜ | ⬜ | ⬜ | |
-| 8 | Int16 | ⬜ | ⬜ | ⬜ | ⬜ | |
-| 9 | Int8 | ⬜ | ⬜ | ⬜ | ⬜ | |
-| 10 | Uint64 | ⬜ | ⬜ | ⬜ | ⬜ | |
-| 11 | Uint32 | ⬜ | ⬜ | ⬜ | ⬜ | |
-| 12 | Uint16 | ⬜ | ⬜ | ⬜ | ⬜ | |
-| 13 | Uint8 | ⬜ | ⬜ | ⬜ | ⬜ | |
-| 14 | Int4 | ⬜ | ⬜ | ⬜ | ⬜ | |
-| 15 | Uint4 | ⬜ | ⬜ | ⬜ | ⬜ | |
-| 16 | FP4 | ⬜ | ⬜ | ⬜ | ⬜ | |
-| 17 | Int2 | ⬜ | ⬜ | ⬜ | ⬜ | |
-| 18 | Uint2 | ⬜ | ⬜ | ⬜ | ⬜ | |
-| 19 | Ternary | ⬜ | ⬜ | ⬜ | ⬜ | |
-| 20 | Binary | ⬜ | ⬜ | ⬜ | ⬜ | |
-| 21 | Int | ⬜ | ⬜ | ⬜ | ⬜ | ABI width explicit |
-| 22 | Uint | ⬜ | ⬜ | ⬜ | ⬜ | |
-| 23 | Uintptr | ⬜ | ⬜ | ⬜ | ⬜ | never serialize as tensor id |
-| 24 | Complex64 | ⬜ | ⬜ | ⬜ | ⬜ | |
-| 25 | Complex128 | ⬜ | ⬜ | ⬜ | ⬜ | |
-| 26 | NF4 | ⬜ | ⬜ | ⬜ | ⬜ | |
-| 27 | FP6 | ⬜ | ⬜ | ⬜ | ⬜ | |
-| 28 | Int6 | ⬜ | ⬜ | ⬜ | ⬜ | |
-| 29 | Uint6 | ⬜ | ⬜ | ⬜ | ⬜ | |
-| 30 | Int5 | ⬜ | ⬜ | ⬜ | ⬜ | |
-| 31 | Uint5 | ⬜ | ⬜ | ⬜ | ⬜ | |
-| 32 | Int3 | ⬜ | ⬜ | ⬜ | ⬜ | |
-| 33 | Uint3 | ⬜ | ⬜ | ⬜ | ⬜ | |
+| 0 | Float64 | ✅ | ✅ | ⬜ | ⬜ | |
+| 1 | Float32 | ✅ | ✅ | ⬜ | ⬜ | likely first ALU |
+| 2 | Float16 | ✅ | ✅ | ⬜ | ⬜ | native CUDA half |
+| 3 | BFloat16 | ✅ | ✅ | ⬜ | ⬜ | |
+| 4 | FP8E4M3 | ✅ | ✅ | ⬜ | ⬜ | |
+| 5 | FP8E5M2 | ✅ | ✅ | ⬜ | ⬜ | |
+| 6 | Int64 | ✅ | ✅ | ⬜ | ⬜ | |
+| 7 | Int32 | ✅ | ✅ | ⬜ | ⬜ | |
+| 8 | Int16 | ✅ | ✅ | ⬜ | ⬜ | |
+| 9 | Int8 | ✅ | ✅ | ⬜ | ⬜ | |
+| 10 | Uint64 | ✅ | ✅ | ⬜ | ⬜ | |
+| 11 | Uint32 | ✅ | ✅ | ⬜ | ⬜ | |
+| 12 | Uint16 | ✅ | ✅ | ⬜ | ⬜ | |
+| 13 | Uint8 | ✅ | ✅ | ⬜ | ⬜ | |
+| 14 | Int4 | ✅ | ✅ | ⬜ | ⬜ | |
+| 15 | Uint4 | ✅ | ✅ | ⬜ | ⬜ | |
+| 16 | FP4 | ✅ | ✅ | ⬜ | ⬜ | |
+| 17 | Int2 | ✅ | ✅ | ⬜ | ⬜ | |
+| 18 | Uint2 | ✅ | ✅ | ⬜ | ⬜ | |
+| 19 | Ternary | ✅ | ✅ | ⬜ | ⬜ | |
+| 20 | Binary | ✅ | ✅ | ⬜ | ⬜ | |
+| 21 | Int | ✅ | ✅ | ⬜ | ⬜ | ABI width explicit |
+| 22 | Uint | ✅ | ✅ | ⬜ | ⬜ | |
+| 23 | Uintptr | ✅ | ✅ | ⬜ | ⬜ | never serialize as tensor id |
+| 24 | Complex64 | ✅ | ✅ | ⬜ | ⬜ | |
+| 25 | Complex128 | ✅ | ✅ | ⬜ | ⬜ | |
+| 26 | NF4 | ✅ | ✅ | ⬜ | ⬜ | |
+| 27 | FP6 | ✅ | ✅ | ⬜ | ⬜ | |
+| 28 | Int6 | ✅ | ✅ | ⬜ | ⬜ | |
+| 29 | Uint6 | ✅ | ✅ | ⬜ | ⬜ | |
+| 30 | Int5 | ✅ | ✅ | ⬜ | ⬜ | |
+| 31 | Uint5 | ✅ | ✅ | ⬜ | ⬜ | |
+| 32 | Int3 | ✅ | ✅ | ⬜ | ⬜ | |
+| 33 | Uint3 | ✅ | ✅ | ⬜ | ⬜ | |
 
 ### Numerical semantics gates
 
 | Concern | Status |
 |---|:---:|
-| Integer/low-bit learning rules match Go | ⬜ |
-| Binary/ternary bit order, codes, masks | ⬜ |
-| Complex real/imag layout | ⬜ |
-| FP8/FP6/FP4/NF4 exact code tables | ⬜ |
-| Accumulator dtype + reduction order + reproducibility policy | ⬜ |
-| Explicit lossy conversion permission + scratch lifetime | ⬜ |
-| Unsupported arithmetic → hard error (no silent widen) | ⬜ |
+| Integer/low-bit learning rules match Go | 🚧 Dense forward exact_bit×34 |
+| Binary/ternary bit order, codes, masks | 🚧 Dense forward exact_bit |
+| Complex real/imag layout | 🚧 Dense forward exact_bit |
+| FP8/FP6/FP4/NF4 exact code tables | 🚧 Dense forward exact_bit |
+| Accumulator dtype + reduction order + reproducibility policy | 🚧 HW f64 MatVec = Go contract |
+| Explicit lossy conversion permission + scratch lifetime | 🚧 decode→f64 W on mount |
+| Unsupported arithmetic → hard error (no silent widen) | 🚧 |
 
 ---
 
@@ -344,7 +346,7 @@ Packed layouts. Row **None** = FormatNone + DType (not “FP32 master”).
 
 | Format | CUDA pack+MatVec | CUDA Dense F | CUDA Dense B/update |
 |--------|:-----------------:|:-------------:|:--------------------:|
-| None | ⬜ (via weights + DType) | ⬜ | ⬜ |
+| None | ✅ (via weights + DType) | ✅ | ⬜ |
 | Q8_0 | ⬜ | ⬜ | ⬜ |
 | Q4_0 | ⬜ | ⬜ | ⬜ |
 | Q4_1 | ⬜ | ⬜ | ⬜ |
@@ -413,17 +415,17 @@ Packed layouts. Row **None** = FormatNone + DType (not “FP32 master”).
 | Composition | Nested non-Dense; shared stores; branch order; no duplicate updates | ⬜ |
 | Discrete/index/rule | Explicit differentiability matching Go | ⬜ |
 
-### Dense first slice (M1 — suggested tick order)
+### Dense first slice (M1)
 
 | # | Case | Status |
 |---|---|:---:|
-| 1 | Dispatch `welvet_dense_matvec_f32` (command buffer) | ⬜ |
-| 2 | Bias + activation on device (or labeled host epilogue) | ⬜ |
-| 3 | Leaf forward exact_bit vs Go Float32 | ⬜ |
-| 4 | Leaf forward ×34 FormatNone | ⬜ |
+| 1 | HW float64 MatVec on CUDA (Go FormatNone accumulate contract) | ✅ |
+| 2 | Bias + activation on device | ✅ |
+| 3 | Leaf forward exact_bit vs Go Float32 | ✅ |
+| 4 | Leaf forward ×34 FormatNone exact_bit vs Go | ✅ `go_v_cuda` |
 | 5 | NormalBP dX/dW/db + SGD Float32 resident | ⬜ |
 | 6 | NormalBP ×34 + volume `1×1×1` / `2×2×2` | ⬜ |
-| 7 | Speed table goµs / cudaµs / spd%Δ + device identity | ⬜ |
+| 7 | Speed table Go / C++ / CUDA + device identity | ✅ CUDA warm-exec wins ×34 |
 
 ---
 
@@ -433,9 +435,9 @@ Packed layouts. Row **None** = FormatNone + DType (not “FP32 master”).
 
 | Primitive | Forward/use | Backward/update | Status |
 |---|---|---|:---:|
-| GEMV/GEMM | Dense + shared projections | GEMVᵀ, dX, outer/dW, db | ⬜ |
+| GEMV/GEMM | Dense + shared projections | GEMVᵀ, dX, outer/dW, db | 🚧 Dense f64 GEMV fwd |
 | Reduction | Sum, mean, var, max, norm, LSE | Reduction grads + broadcast | ⬜ |
-| Elementwise | Bias, mul, add, acts, gates | Derivatives / JVPs | ⬜ |
+| Elementwise | Bias, mul, add, acts, gates | Derivatives / JVPs | 🚧 Dense bias+act fwd |
 | Layout/shape | View, transpose, reshape, concat, split | Inverse mapping | ⬜ |
 | Gather/scatter | Embedding, indexing, routing | Duplicate-index policy | ⬜ |
 | Convolution | im2col or native CUDA conv | Overlap accum + filter grads | ⬜ |
@@ -542,7 +544,7 @@ Per-layer evidence tables (leaf ×34, volume shapes, speed, wires): **[docs/TRAI
 
 | Platform | Artifact | Status |
 |---|---|:---:|
-| Linux x86_64 | `.so` / headers / kernels / wire tool | 🚧 M0 |
+| Linux x86_64 | `.so` / headers / kernels / wire tool | 🚧 M1 Dense fwd |
 | Linux aarch64 | Explicitly bounded later | ⬜ |
 | Windows x86_64 | Optional later | ⬜ |
 
@@ -551,12 +553,12 @@ Per-layer evidence tables (leaf ×34, volume shapes, speed, wires): **[docs/TRAI
 
 | Surface | Status |
 |---|:---:|
-| ABI negotiation / version | 🚧 `welvet_version` = `0.00` |
+| ABI negotiation / version | ✅ `welvet_version` = `0.13` |
 | CUDA init / available / identity | ✅ |
 | Gaps census counters | ✅ |
-| Tensor / weight / layer descriptors | ⬜ |
+| Tensor / weight / layer descriptors | 🚧 Dense FormatNone descriptors |
 | Engine/model handles (volume create/load/train/checkpoint) | ⬜ |
-| Dense forward / NormalBP wire magics (w2a) | ⬜ |
+| Dense forward / NormalBP wire magics (w2a) | 🚧 Dense fwd (`WVD3`/`WVO1`); NormalBP ⬜ |
 | All layer NormalBP magics (mirror welvet.cpp names) | ⬜ |
 | Volume / Step / Mesh / Tween* magics | ⬜ |
 | Go NAC dispatcher selects CUDA | ⬜ |
@@ -569,10 +571,10 @@ Boundary rules match welvet.cpp: versioned descriptors, opaque handles, no C++ e
 
 | Capability | Status |
 |---|:---:|
-| Authoritative owner (host vs CUDA generation) | ⬜ |
-| Upload once / reuse across fwd/bwd/update | ⬜ |
-| Preserve storage truth (no undeclared f32 master) | ⬜ |
-| Derived device layout cache + invalidation | ⬜ |
+| Authoritative owner (host vs CUDA generation) | 🚧 FormatNone host + f64 GPU mirror |
+| Upload once / reuse across fwd/bwd/update | 🚧 upload-once W; warm exec reuses |
+| Preserve storage truth (no undeclared f32 master) | ✅ FormatNone WeightStore |
+| Derived device layout cache + invalidation | 🚧 Dense mount decode→f64 |
 | Resident activations / tapes across adjacent layers | ⬜ |
 | Resident gradients + clear policy | ⬜ |
 | Resident update in declared storage semantics | ⬜ |
@@ -603,9 +605,10 @@ Boundary rules match welvet.cpp: versioned descriptors, opaque handles, no C++ e
 
 | Workload | dtype | pass/mode | Go µs | CUDA µs | spd%Δ | exact? | device | evidence |
 |---|---|---|---:|---:|---:|:---:|---|---|
-| — | — | — | — | — | — | — | — | ⬜ |
+| Dense GEMV batch=8 in/out=256 | float32 | FormatNone fwd | 919 | 68 | −93% | exact_bit | GTX 1650 SUPER | `TestGoVCudaDenseForward` |
+| Dense GEMV ×34 | all 34 | FormatNone fwd | 0.9–9.4ms | 68–94µs | −92…−99% | exact_bit | GTX 1650 SUPER | CUDA warm-exec wins 34/34 |
 
-Measure cold compile, initial upload, warm resident, sync, export separately. CUDA is not assumed faster than Go or welvet.cpp.
+Measure cold compile, initial upload (`cuda_mount`), warm resident (`cuda_exec`), sync, export separately. Winner column uses warm exec.
 
 ---
 
@@ -614,9 +617,9 @@ Measure cold compile, initial upload, warm resident, sync, export separately. CU
 | Milestone | Concrete outcome | Status |
 |---|---|:---:|
 | **M0** — CUDA host + this README runway | Device/library/buffer/smoke + full Go inventory checklist | ✅ |
-| **M1** — Dense FormatNone forward on CUDA | w2a forward parity (+ speed) | ⬜ |
+| **M1** — Dense FormatNone forward on CUDA | w2a `go_v_cuda` exact_bit×34 + Go/C++/CUDA speed | ✅ |
 | **M2** — Dense NormalBP resident | Multi-step train parity | ⬜ |
-| **M3** — Dtype / quant breadth | ×34 (+ quants or honest gaps) | ⬜ |
+| **M3** — Dtype / quant breadth | ×34 (+ quants or honest gaps) | 🚧 FormatNone×34 fwd; quants open |
 | **M4** — Layer breadth | Transformer → CNN/RNN → extended | ⬜ |
 | **M5** — Full volumetric runtime | Grid + Step/Mesh + credit families | ⬜ |
 | **M6** — Systems + Model/IO + Lucy | DNA…telemetry, ENTITY/HF/…, LPD | ⬜ |

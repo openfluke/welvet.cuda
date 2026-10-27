@@ -5,14 +5,20 @@ separate CPU backend; `welvet.metal` is the separate Apple GPU backend. Each
 ships through its own native artifact and C ABI. There is no dependency from
 one backend to the other, and **no host numerical fallback** labeled as CUDA.
 
-## Supported computation (M0)
+## Supported computation
 
-M0 is host scaffolding only — **not** engine-board credit:
+**M0** (host scaffolding — not engine-board credit alone):
 
 - CUDA device probe + runtime identity string
 - Device buffer alloc / H2D / D2H
-- Compiled smoke kernel `welvet_smoke_saxpy` (+ placeholder `welvet_dense_matvec_f32`)
+- Compiled smoke kernel `welvet_smoke_saxpy`
 - C ABI: version / init / available / gaps
+
+**M1** (engine credit — Dense FormatNone forward):
+
+- FormatNone×34 decode → resident **HW float64** MatVec on CUDA
+- Bias + activation on device
+- Wire tool `welvet_dense_fwd` (`WVD3`/`WVO1`) — w2a `go_v_cuda` exact_bit×34
 
 Everything else is gap until ticked in [TRAINING_CHECKLIST.md](TRAINING_CHECKLIST.md)
 and the [README runway](../README.md).
@@ -34,6 +40,7 @@ and the [README runway](../README.md).
 ./build/welvet_dense_fwd --identity
 ./build/welvet_dense_fwd --gaps
 ./scripts/linux_build_w2a.sh --smoke
+./scripts/linux_build_w2a.sh --dense-fwd
 ```
 
 Tests and CPU parity references live in sibling `w2a`, not this repository.

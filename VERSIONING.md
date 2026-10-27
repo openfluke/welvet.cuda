@@ -6,6 +6,7 @@
 | Tag | Meaning |
 |-----|---------|
 | **0.00** | Bedrock — CUDA host scaffold; **0 / 100** on the engine board |
+| **0.13** | M1 Dense FormatNone×34 forward signed (Foundation 9 + Dense fwd 4) |
 | **0.x** | `round(earned)` from the engine table in [README.md](README.md) |
 | **1.0.0** | Engine board **100/100** — full Go parity on NVIDIA GPU (FormatNone path + Model/IO + Systems + CamSync + peak fused, or explicit gate rewrite) |
 

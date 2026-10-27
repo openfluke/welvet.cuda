@@ -6,7 +6,7 @@ if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES OR CMAKE_CUDA_ARCHITECTURES STREQUAL "")
   set(CMAKE_CUDA_ARCHITECTURES "75")
 endif()
 
-project(welvet_cuda VERSION 0.00 LANGUAGES CXX CUDA)
+project(welvet_cuda VERSION 0.13 LANGUAGES CXX CUDA)
 
 # NVIDIA CUDA-only Welvet engine: C++ host + CUDA kernels.
 # Linux x86_64 is the primary host; Windows is a later artifact.
@@ -31,11 +31,14 @@ set(WELVET_CORE_SOURCES
   src/core/dtype.cpp
   src/core/activate.cpp
   src/core/tensor.cpp
+  src/core/float_codecs.cpp
   src/cuda/device.cpp
   src/cuda/buffer.cpp
   src/cuda/kernels.cu
   src/weights/store.cpp
+  src/weights/native_codec.cpp
   src/layers/dense/dense.cpp
+  src/layers/dense/session.cpp
   src/architecture/grid.cpp
   src/runtime/forward.cpp
   src/runtime/backward.cpp

@@ -16,15 +16,15 @@ const std::vector<Entry>& build() {
       {"platform.linux", "platform", "Linux x86_64 CUDA host build", true},
 
       // --- Core / weights (port from welvet.cpp / welvet.metal semantics) ---
-      {"core.dtype.all34", "core", "gap? all 34 DType names + CUDA FormatNone gates", false},
-      {"core.activate", "core", "gap? Activate/ActivateDeriv parity vs Go (host+CUDA)", false},
-      {"core.fp_codecs", "core", "gap? FP8/FP4/NF4/FP6 pack-unpack for CUDA storage", false},
-      {"weights.formatnone.x34", "weights", "gap? FormatNone pack/decode ×34 on CUDA", false},
-      {"weights.matvec.cuda", "weights", "gap? wire welvet_dense_matvec_f32 + residency", false},
-      {"weights.resident", "weights", "gap? upload-once / reuse across fwd/bwd/update", false},
+      {"core.dtype.all34", "core", "all 34 DType names + FormatNone Dense forward gates", true},
+      {"core.activate", "core", "Activate/ActivateDeriv host helpers (GPU act in Dense kernel)", true},
+      {"core.fp_codecs", "core", "FP8/FP4/NF4/FP6 pack-unpack for FormatNone storage", true},
+      {"weights.formatnone.x34", "weights", "FormatNone pack/decode ×34 for Dense forward", true},
+      {"weights.matvec.cuda", "weights", "resident f64 Dense MatVec + bias/act on CUDA", true},
+      {"weights.resident", "weights", "upload-once W/bias; warm execute reuses device buffers", true},
 
       // --- Layers (same 23 kinds as welvet.cpp / Go / welvet.metal) ---
-      {"dense.forward.cuda", "layers", "gap? Dense CUDA forward FormatNone", false},
+      {"dense.forward.cuda", "layers", "Dense CUDA FormatNone×34 forward (exact_bit vs Go)", true},
       {"dense.normalbp.cuda", "layers", "gap? Dense NormalBP dX/dW/db + SGD CUDA", false},
       {"mha.forward.cuda", "layers", "gap? MHA ModeSelf CUDA", false},
       {"mha.normalbp.cuda", "layers", "gap? MHA NormalBP CUDA", false},
@@ -71,7 +71,7 @@ const std::vector<Entry>& build() {
 
       // --- Delivery / validation ---
       {"platform.windows", "platform", "gap? Windows CUDA artifact", false},
-      {"w2a.go_v_cuda", "interop", "gap? w2a Go_v_Cuda suites (parity + speed)", false},
+      {"w2a.go_v_cuda", "interop", "w2a Go_v_Cuda Dense forward parity + speed", true},
       {"nac.go_delegate", "interop", "gap? Go Welvet NAC → CUDA dispatch", false},
       {"determinism.policy", "cuda", "gap? documented reduction order + exact_bit bands", false},
   };
