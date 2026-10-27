@@ -6,6 +6,7 @@
 #include "welvet/cuda/swiglu.hpp"
 #include "welvet/cuda/embedding.hpp"
 #include "welvet/cuda/conv.hpp"
+#include "welvet/cuda/tween.hpp"
 #include "welvet/activate.hpp"
 
 #include <cuda_runtime.h>
@@ -2427,6 +2428,75 @@ Status launch_convt3_forward(const float* x_host, const float* W_f32, float* pre
   }
   st = cuda_status(cudaMemcpy(post_host, post_dev, out_bytes, cudaMemcpyDeviceToHost),
                    "convt3 download post");
+  cleanup();
+  return st;
+}
+
+// Go parallel.projectGap — block average with f64 sums (matches Go float64 path).
+__global__ void project_gap_f64(const float* __restrict__ src, float* __restrict__ dst,
+                                unsigned long long sn, unsigned long long dn) {
+  const unsigned long long i = blockIdx.x * blockDim.x + threadIdx.x;
+  if (i >= dn) return;
+  unsigned long long lo = i * sn / dn;
+  unsigned long long hi = (i + 1) * sn / dn;
+  if (hi <= lo) hi = lo + 1;
+  if (hi > sn) hi = sn;
+  double sum = 0.0;
+  for (unsigned long long j = lo; j < hi; ++j) {
+    sum += static_cast<double>(src[j]);
+  }
+  dst[i] = static_cast<float>(sum / static_cast<double>(hi - lo));
+}
+
+Status launch_project_gap(const float* src_host, float* dst_host, std::int32_t sn, std::int32_t dn) {
+  if (!src_host || !dst_host) {
+    return Status::Err(StatusCode::InvalidArgument, "project_gap: null host ptr");
+  }
+  if (sn <= 0 || dn <= 0) {
+    return Status::Err(StatusCode::InvalidArgument, "project_gap: empty");
+  }
+  if (sn == dn) {
+    std::memcpy(dst_host, src_host, static_cast<std::size_t>(dn) * sizeof(float));
+    return Status::Ok();
+  }
+  float *src_dev = nullptr, *dst_dev = nullptr;
+  auto cleanup = [&]() {
+    if (src_dev) cudaFree(src_dev);
+    if (dst_dev) cudaFree(dst_dev);
+  };
+  auto st = cuda_status(cudaMalloc(&src_dev, static_cast<std::size_t>(sn) * sizeof(float)),
+                        "project_gap malloc src");
+  if (!st) return st;
+  st = cuda_status(cudaMalloc(&dst_dev, static_cast<std::size_t>(dn) * sizeof(float)),
+                   "project_gap malloc dst");
+  if (!st) {
+    cleanup();
+    return st;
+  }
+  st = cuda_status(cudaMemcpy(src_dev, src_host, static_cast<std::size_t>(sn) * sizeof(float),
+                              cudaMemcpyHostToDevice),
+                   "project_gap upload");
+  if (!st) {
+    cleanup();
+    return st;
+  }
+  constexpr int kThreads = 256;
+  const int blocks = static_cast<int>((static_cast<std::size_t>(dn) + kThreads - 1) / kThreads);
+  project_gap_f64<<<blocks, kThreads>>>(src_dev, dst_dev, static_cast<unsigned long long>(sn),
+                                        static_cast<unsigned long long>(dn));
+  st = cuda_status(cudaGetLastError(), "project_gap launch");
+  if (!st) {
+    cleanup();
+    return st;
+  }
+  st = cuda_status(cudaDeviceSynchronize(), "project_gap sync");
+  if (!st) {
+    cleanup();
+    return st;
+  }
+  st = cuda_status(cudaMemcpy(dst_host, dst_dev, static_cast<std::size_t>(dn) * sizeof(float),
+                              cudaMemcpyDeviceToHost),
+                   "project_gap download");
   cleanup();
   return st;
 }

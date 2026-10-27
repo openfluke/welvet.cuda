@@ -93,7 +93,7 @@ const std::vector<Entry>& build() {
       {"train.camsync", "training", "gap? CamSync / BlendStores CUDA", false},
 
       // --- Systems / model ---
-      {"systems.tween", "systems", "gap? Tween* projected credit CUDA", false},
+      {"systems.tween", "systems", "ModeTween projected credit CUDA", true},
       {"systems.dna", "systems", "gap? DNA", false},
       {"systems.evolution", "systems", "gap? evolution", false},
       {"systems.tanhi", "systems", "gap? TANHI", false},

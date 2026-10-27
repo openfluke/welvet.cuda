@@ -11,6 +11,7 @@
 | **0.51** | NormalBP Mode 1 signed for all 23 layers (`TestGoVCudaNormalBP`) |
 | **0.52** | StepBP Line + Dense MeshBP (`TestGoVCudaStepBPTrain`) |
 | **0.53** | Heterogeneous MeshBP MGB1 all 23 families (`TestGoVCudaMeshBPTrain`, 103 groups) |
+| **0.54** | ModeTween projected local @ lr×0.5 (`TestGoVCudaTweenTrain`, 130 groups) |
 | **0.x** | `round(earned)` from the engine table in [README.md](README.md) |
 | **1.0.0** | Engine board **100/100** — full Go parity on NVIDIA GPU (FormatNone path + Model/IO + Systems + CamSync + peak fused, or explicit gate rewrite) |
 

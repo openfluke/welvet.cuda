@@ -9,8 +9,8 @@ Canonical enum: Go `layers/parallel/train_mode.go` (`TrainMode`).
 and [`welvet.cpp/docs/TRAINING_CHECKLIST.md`](../../welvet.cpp/docs/TRAINING_CHECKLIST.md).
 Same cases / wires / column meanings; status here is **CUDA** only. metal/cpp checkmarks do **not** transfer credit.
 
-**Current engine:** `0.53` (leaf FormatNone forwards + NormalBP Mode 1 + StepBP Line / Dense MeshBP + **heterogeneous MeshBP MGB1 signed** — **53 / 100** on the engine board).
-Leaf forward + NormalBP leaf/volume signed for all 23 layer kinds (+ seqmix metadata). `TestGoVCudaNormalBP` PASS. `TestGoVCudaStepBPTrain` PASS. `TestGoVCudaMeshBPTrain` PASS (103 groups, MGB1 all-family mesh-clock). Tween* / CamSync remain open.
+**Current engine:** `0.54` (leaf FormatNone forwards + NormalBP + StepBP + MeshBP + **ModeTween signed** — **54 / 100** on the engine board).
+Leaf forward + NormalBP leaf/volume signed for all 23 layer kinds (+ seqmix metadata). `TestGoVCudaNormalBP` PASS. `TestGoVCudaStepBPTrain` PASS. `TestGoVCudaMeshBPTrain` PASS. `TestGoVCudaTweenTrain` PASS (130 groups). Remaining Tween* variants / CamSync remain open.
 
 ---
 
@@ -528,30 +528,36 @@ sections 2–6 extension evidence above.
 
 | Case group | Status | Evidence |
 |---|:---:|---|
-| Dense multi-hop Float32 + 1-hop ×34 | [ ] | Width-changing projected credit; native weight updates |
-| RMSNorm / LayerNorm Float32 + ×34 | [ ] | Exact weights; finite loss band |
-| Softmax Float32 + ×34 | [ ] | Weightless loss checks; GPU exp uses promoted evaluation before Float32 rounding |
-| SwiGLU Float32 + ×34 | [ ] | Exact weights; finite loss band |
-| Sequential / Residual Float32 + ×34 | [ ] | Leaf-projected credit, original forward inputs retained |
-| Mamba / Metacognition Float32 + ×34 | [ ] | Exact weights; finite loss band |
-| GDN Float32 | [ ] | ≥strict updated weights; finite loss band (one Float32-step weight difference remains) |
-| NestedStack Float32 + ×34 | [ ] | Flattened leaf walk; exact weights and finite loss band |
-| Embedding / MHA Float32 + ×34 | [ ] | Exact weights; finite loss band |
-| CNN1/2/3 / ConvT1/2/3 ×34 | [ ] | Explicit per-dimension leaf fixtures, including Float32 and rank-5 inputs |
-| RNN / LSTM Float32 + ×34 | [ ] | Exact weights; finite loss band |
-| Dense volume 111 / 211 / 222 Float32 | [ ] | Reverse-hop projected local updates |
-| Volume 222 Float32: all 23 supported families | [ ] | Per-kind local update dispatch; finite loss band |
-| Volume 211 ×34: all 22 dtype-generic families | [ ] | Native storage updates across all supported dtypes |
-| GPU projection and nested-credit primitives | [ ] | Downsample, upsample, cancellation, invalid shapes, and original-input local updates |
-| Benchmark fixture reset | [ ] | All leaf dtype sweeps and Dense volume dtype cases compare measured-run output against an independent run |
+| Dense multi-hop Float32 + 1-hop ×34 | [x] | Width-changing projected credit; native weight updates |
+| RMSNorm / LayerNorm Float32 + ×34 | [x] | Exact weights; finite loss band |
+| Softmax Float32 + ×34 | [x] | Weightless loss checks; GPU exp uses promoted evaluation before Float32 rounding |
+| SwiGLU Float32 + ×34 | [x] | Exact weights; finite loss band |
+| Sequential / Residual Float32 + ×34 | [x] | Leaf-projected credit, original forward inputs retained |
+| Mamba / Metacognition Float32 + ×34 | [x] | Exact weights; finite loss band |
+| GDN Float32 | [x] | ≥strict updated weights; finite loss band (one Float32-step weight difference remains) |
+| NestedStack Float32 + ×34 | [x] | Flattened leaf walk; exact weights and finite loss band |
+| Embedding / MHA Float32 + ×34 | [x] | Exact weights; finite loss band |
+| CNN1/2/3 / ConvT1/2/3 ×34 | [x] | Explicit per-dimension leaf fixtures, including Float32 and rank-5 inputs |
+| RNN / LSTM Float32 + ×34 | [x] | Exact weights; finite loss band |
+| Dense volume 111 / 211 / 222 Float32 | [x] | Reverse-hop projected local updates |
+| Volume 222 Float32: all 23 supported families | [x] | Per-kind local update dispatch; finite loss band |
+| Volume 211 ×34: all 22 dtype-generic families | [x] | Native storage updates across all supported dtypes |
+| GPU projection and nested-credit primitives | [x] | Downsample, upsample, cancellation, invalid shapes, and original-input local updates |
+| Benchmark fixture reset | [x] | All leaf dtype sweeps and Dense volume dtype cases compare measured-run output against an independent run |
 
-**Status:** ⬜ not signed yet (CUDA).
-specified; loss uses the finite float2 band above. GDN leaf weights require
-≥strict, rather than exact bits. Volume weight subnormal flushing follows the
-existing CUDA policy. KMeans and Parallel have independent ModeTween evidence above. No host numerical fallback is supplied.
-This sign-off is ModeTween only. TweenChain has its own sign-off below;
-Split/Alt and the proxy/cache/sparse and Step/Mesh variants have separate sign-offs below. Graph residency and performance tuning
-remain open; benchmark timings include resetting the fixture.
+**Status:** ✅ ModeTween signed (CUDA).
+Loss uses the finite float2 band above. GDN leaf weights require ≥strict, rather
+than exact bits. Volume weight subnormal flushing follows the existing CUDA
+policy. KMeans and Parallel have independent ModeTween evidence above. No host
+numerical fallback is supplied.
+
+**Validated:** 2026-10-28. `TestGoVCudaTweenTrain` — **130 case groups** PASS in
+717.464 seconds (`WELVET_CUDA_BENCH_ITERS=1`, `-timeout 90m`). Projection uses
+CUDA `launch_project_gap` (f64 block averages). This sign-off is ModeTween only.
+TweenChain / Split / Alt and Step/Mesh variants have separate sign-offs below.
+Graph residency and performance tuning remain open; benchmark timings include
+resetting the fixture.
+
 
 ## w2a Go↔CUDA (TweenChain ModeTweenChain) — sign-off evidence
 
@@ -923,31 +929,31 @@ CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures. 3D = reverse-hop volume 2�
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [ ] | [ ] | |
-| Residual | [ ] | [ ] | [ ] | |
-| KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
-| Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 0.54 |
+| RMSNorm | [x] | [x] | [x] | 0.54 |
+| LayerNorm | [x] | [x] | [x] | 0.54 |
+| SwiGLU | [x] | [x] | [x] | 0.54 |
+| Softmax | [x] | [x] | [x] | 0.54 |
+| Embedding | [x] | [x] | [x] | 0.54 |
+| MHA | [x] | [x] | [x] | 0.54 |
+| CNN1 | [x] | [x] | [x] | 0.54 |
+| CNN2 | [x] | [x] | [x] | 0.54 |
+| CNN3 | [x] | [x] | [x] | 0.54 |
+| ConvT1 | [x] | [x] | [x] | 0.54 |
+| ConvT2 | [x] | [x] | [x] | 0.54 |
+| ConvT3 | [x] | [x] | [x] | 0.54 |
+| RNN | [x] | [x] | [x] | 0.54 |
+| LSTM | [x] | [x] | [x] | 0.54 |
+| Sequential | [x] | [x] | [x] | 0.54 |
+| Residual | [x] | [x] | [x] | 0.54 |
+| KMeans | [x] | [x] | [x] | 0.54 |
+| Mamba | [x] | [x] | [x] | 0.54 |
+| Metacognition | [x] | [x] | [x] | 0.54 |
+| GDN | [x] | [x] | [x] | 0.54 |
+| Parallel | [x] | [x] | [x] | 0.54 |
+| Stack | [x] | [x] | [x] | 0.54 |
 
-**Checkpoint:** ⬜ not signed yet (CUDA).
+**Checkpoint:** ✅ ModeTween signed (CUDA) — projected local @ `lr×0.5`; TWB1/TWV1 + per-kind volumes + KMeans/Parallel; 130 groups.
 
 ---
 
@@ -2018,6 +2024,7 @@ Run: `./scripts/linux_build_w2a.sh --training-25-29-all`.
 | **0.51** | NormalBP Mode 1 fully signed (23 families leaf+vol). Engine board **51 / 100**. |
 | **0.52** | StepBP Line FamilyBP (`STB1`) + Dense MeshBP (`MBP1`) + ModeMeshBP shared vols; `TestGoVCudaStepBPTrain` PASS. Engine board **52 / 100**. |
 | **0.53** | Heterogeneous MeshBP (`MGB1`/`MGBO`) all 23 families — 103 clock groups; `TestGoVCudaMeshBPTrain` PASS (~1356s @ BENCH_ITERS=1). Engine board **53 / 100**. |
+| **0.54** | ModeTween (`TWB1`/`TWV1`/per-kind/`KMTV`/`PNTV`) — 130 groups; `TestGoVCudaTweenTrain` PASS (~717s @ BENCH_ITERS=1). Engine board **54 / 100**. |
 | | Tick rows + bump version as w2a `go_v_cuda` suites pass. |
 
 ## Mixed Go / C++ / CUDA routing — sign-off evidence
