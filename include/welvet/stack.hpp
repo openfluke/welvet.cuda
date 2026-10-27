@@ -114,6 +114,9 @@ Status child_backward(Child& c, const TensorF32& grad_out, const TensorF32& inpu
 Status child_apply_sgd(Child* c, const TensorF32& dW, double lr);
 int child_grad_w_size(const Child& c);
 Status child_export_f32(const Child& c, float* dst);
+// FamilyBP credit: Backward + ApplyGradSGD @ lr; returns true input gradient.
+Status child_family_bp(Child& c, const TensorF32& grad_out, const TensorF32& input,
+                       const TensorF32& pre, double lr, TensorF32* grad_in);
 
 Status forward(Layer& layer, const TensorF32& input, TensorF32* pre, TensorF32* post);
 int grad_w_size(const Layer& layer);

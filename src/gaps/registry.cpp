@@ -86,8 +86,9 @@ const std::vector<Entry>& build() {
        "volume forward Dense…Stack/Mamba/Meta/GDN/KMeans/Parallel CUDA", true},
       {"runtime.backward", "runtime",
        "volume backward Dense…Stack/Mamba/Meta/GDN/KMeans/Parallel CUDA", true},
-      {"runtime.step", "runtime", "gap? Line StepBP/StepTween* CUDA", false},
-      {"runtime.mesh", "runtime", "gap? MeshBP/MeshTween* CUDA", false},
+      {"runtime.step", "runtime", "Line StepBP FamilyBP (STB1) + runtime/line", true},
+      {"runtime.mesh", "runtime",
+       "Heterogeneous MeshBP FamilyBP (MGB1) + Dense MBP1 + runtime/step", true},
       {"train.modes.x29", "training", "gap? all 29 TrainModes + Freeze/Shadow/Adv/Memory", false},
       {"train.camsync", "training", "gap? CamSync / BlendStores CUDA", false},
 

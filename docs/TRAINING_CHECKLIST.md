@@ -9,8 +9,8 @@ Canonical enum: Go `layers/parallel/train_mode.go` (`TrainMode`).
 and [`welvet.cpp/docs/TRAINING_CHECKLIST.md`](../../welvet.cpp/docs/TRAINING_CHECKLIST.md).
 Same cases / wires / column meanings; status here is **CUDA** only. metal/cpp checkmarks do **not** transfer credit.
 
-**Current engine:** `0.51` (leaf FormatNone forwards + **NormalBP Mode 1 fully signed** — **51 / 100** on the engine board).
-Leaf forward + NormalBP leaf/volume signed for all 23 layer kinds (+ seqmix metadata). `TestGoVCudaNormalBP` PASS. StepBP / Tween* / CamSync remain open.
+**Current engine:** `0.53` (leaf FormatNone forwards + NormalBP Mode 1 + StepBP Line / Dense MeshBP + **heterogeneous MeshBP MGB1 signed** — **53 / 100** on the engine board).
+Leaf forward + NormalBP leaf/volume signed for all 23 layer kinds (+ seqmix metadata). `TestGoVCudaNormalBP` PASS. `TestGoVCudaStepBPTrain` PASS. `TestGoVCudaMeshBPTrain` PASS (103 groups, MGB1 all-family mesh-clock). Tween* / CamSync remain open.
 
 ---
 
@@ -84,7 +84,7 @@ Not signed yet. Same scope as welvet.metal when the CUDA path lands: Freeze/Shad
 | MSE / MSEGrad | ✅ host f64 match Go (Dense NormalBP) |
 | SGD and native storage updates | ✅ FormatNone Dense SGD |
 | GDN | ✅ f32 truncated-BPTT NormalBP leaf+vol |
-| Tween / TweenChain / Split / Alt / proxy / mesh variants | ⬜ gap |
+| Tween / TweenChain / Split / Alt / proxy / mesh variants | 🚧 StepBP + heterogeneous MeshBP signed; Tween* modes open |
 | Scheduling and data movement | Host validation, scheduling, allocation, copies and storage staging (permitted) |
 | GPU-only enforcement | M0 host scaffold only; numerical CUDA-only gate lands with first training suites |
 
@@ -480,24 +480,24 @@ sections 2–6 extension evidence above.
 
 | Case group | Status | Evidence |
 |---|:---:|---|
-| Dense multi-hop Line Float32 | [ ] | Per-tick tapes and FamilyBP on pop; exact weights, finite loss band |
-| Dense Line ×34 | [ ] | All supported FormatNone dtypes |
-| RMSNorm / LayerNorm Line Float32 + ×34 | [ ] | Exact weights; finite loss band |
-| Softmax Line Float32 + ×34 | [ ] | Weightless loss check uses the finite loss band |
-| SwiGLU / Sequential / Residual Line Float32 + ×34 | [ ] | Exact weights; finite loss band |
-| Mamba / Metacognition Line Float32 + ×34 | [ ] | Exact weights; finite loss band |
-| GDN Line Float32 | [ ] | ≥strict weights; finite loss band; GPU float2 reductions/transcendentals |
-| NestedStack Line Float32 + ×34 | [ ] | Recursive flattening and child updates |
-| Embedding / MHA Line Float32 + ×34 | [ ] | Exact weights; finite loss band |
-| CNN1 / ConvT1 Line Float32 + ×34 | [ ] | Explicit Line dispatch |
-| CNN2/3 / ConvT2/3 Line ×34 | [ ] | Explicit rank-4/rank-5 inputs, including Float32 |
-| RNN / LSTM Line Float32 + ×34 | [ ] | Exact weights; finite loss band |
-| Dense mesh-clock 111 / 211 / 222 Float32 | [ ] | Double-buffer forward ticks, reverse-time credit and SGD |
-| Dense mesh-clock 111 / 222 ×34 | [ ] | Repeated ticks and native storage updates |
-| Dense mesh-clock disabled cell + remote link | [ ] | Disabled passthrough and remote gradient routing |
-| Volume 222 Float32: all 23 supported families | [ ] | Shared volume Forward+Step path used by Go ModeMeshBP |
-| Volume 211 ×34: all 22 dtype-generic families | [ ] | GDN is Float32-only; retains its volume ≥industry floor |
-| Benchmark fixture reset | [ ] | Line dtype sweeps and GDN compare benchmark results with fresh-run results; Dense mesh dtype/routing fixtures do likewise |
+| Dense multi-hop Line Float32 | [x] | Per-tick tapes and FamilyBP on pop; exact weights, finite loss band |
+| Dense Line ×34 | [x] | All supported FormatNone dtypes |
+| RMSNorm / LayerNorm Line Float32 + ×34 | [x] | Exact weights; finite loss band |
+| Softmax Line Float32 + ×34 | [x] | Weightless loss check uses the finite loss band |
+| SwiGLU / Sequential / Residual Line Float32 + ×34 | [x] | Exact weights; finite loss band |
+| Mamba / Metacognition Line Float32 + ×34 | [x] | Exact weights; finite loss band |
+| GDN Line Float32 | [x] | ≥strict weights; finite loss band; GPU float2 reductions/transcendentals |
+| NestedStack Line Float32 + ×34 | [x] | Recursive flattening and child updates |
+| Embedding / MHA Line Float32 + ×34 | [x] | Exact weights; finite loss band |
+| CNN1 / ConvT1 Line Float32 + ×34 | [x] | Explicit Line dispatch |
+| CNN2/3 / ConvT2/3 Line ×34 | [x] | Explicit rank-4/rank-5 inputs, including Float32 |
+| RNN / LSTM Line Float32 + ×34 | [x] | Exact weights; finite loss band |
+| Dense mesh-clock 111 / 211 / 222 Float32 | [x] | Double-buffer forward ticks, reverse-time credit and SGD |
+| Dense mesh-clock 111 / 222 ×34 | [x] | Repeated ticks and native storage updates |
+| Dense mesh-clock disabled cell + remote link | [x] | Disabled passthrough and remote gradient routing |
+| Volume 222 Float32: all 23 supported families | [x] | Shared volume Forward+Step path used by Go ModeMeshBP |
+| Volume 211 ×34: all 22 dtype-generic families | [x] | GDN is Float32-only; retains its volume ≥industry floor |
+| Benchmark fixture reset | [x] | Line dtype sweeps and GDN compare benchmark results with fresh-run results; Dense mesh dtype/routing fixtures do likewise |
 
 **Scope:** volume rows deliberately reuse the NormalBP volume fixtures because
 Go's grid ModeMeshBP uses that same Forward+Step path. They do not establish
@@ -505,7 +505,7 @@ mesh-clock BPTT parity for non-Dense cells. The separate `MGB1` all-family
 clock fixtures and section 7 provide that evidence.
 KMeans and Parallel are signed off for Line/shared-volume credit above. No CPU fallback is supplied.
 
-**Status:** ⬜ not signed yet (CUDA).
+**Status:** ✅ signed (CUDA) — `TestGoVCudaStepBPTrain` PASS (134 groups, ~838s @ BENCH_ITERS=1).
 repetitions rebuild the initial child configuration and weights; timing includes
 that reset, matching the Go fixture setup. These small correctness fixtures do
 not establish a performance win.
@@ -887,31 +887,31 @@ Ship: thin Stack host + `runtime/line` TickLine/TrainLineMSE; wire `STB1`/`STBO`
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [ ] | [ ] | |
-| Residual | [ ] | [ ] | [ ] | |
-| KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
-| Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 0.52 |
+| RMSNorm | [x] | [x] | [x] | 0.52 |
+| LayerNorm | [x] | [x] | [x] | 0.52 |
+| Softmax | [x] | [x] | [x] | 0.52 |
+| SwiGLU | [x] | [x] | [x] | 0.52 |
+| Embedding | [x] | [x] | [x] | 0.52 |
+| MHA | [x] | [x] | [x] | 0.52 |
+| CNN1 | [x] | [x] | [x] | 0.52 |
+| CNN2 | [x] | [x] | [x] | 0.52 |
+| CNN3 | [x] | [x] | [x] | 0.52 |
+| ConvT1 | [x] | [x] | [x] | 0.52 |
+| ConvT2 | [x] | [x] | [x] | 0.52 |
+| ConvT3 | [x] | [x] | [x] | 0.52 |
+| RNN | [x] | [x] | [x] | 0.52 |
+| LSTM | [x] | [x] | [x] | 0.52 |
+| Sequential | [x] | [x] | [x] | 0.52 |
+| Residual | [x] | [x] | [x] | 0.52 |
+| KMeans | [x] | [x] | [x] | 0.52 |
+| Mamba | [x] | [x] | [x] | 0.52 |
+| Metacognition | [x] | [x] | [x] | 0.52 |
+| GDN | [x] | [x] | [x] | 0.52 |
+| Parallel | [x] | [x] | [x] | 0.52 |
+| Stack | [x] | [x] | [x] | 0.52 |
 
-**Checkpoint:** ⬜ not signed yet (CUDA).
+**Checkpoint:** ✅ StepBP Line + Dense MeshBP signed (CUDA) — STB1 FamilyBP + MBP1 mesh-clock + ModeMeshBP vols; KMeans/Parallel Line included.
 
 ---
 
@@ -1069,48 +1069,48 @@ stores tapes, stages buffers and rebuilds benchmark fixtures.
 
 Run: `./scripts/linux_build_w2a.sh --meshbp-train`.
 The runner includes `TestGoVCudaMeshBPTrain` (**103 case groups**), the existing StepBP/volume suite,
-NormalBP and the CUDA-only guard. Go ModeMeshBP on grid also uses the shared
+and NormalBP. Go ModeMeshBP on grid also uses the shared
 volume Forward+Step path validated at 222 Float32 and 211 ×34.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [ ] | [ ] | |
-| Residual | [ ] | [ ] | [ ] | |
-| KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
-| Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 0.53 |
+| RMSNorm | [x] | [x] | [x] | 0.53 |
+| LayerNorm | [x] | [x] | [x] | 0.53 |
+| SwiGLU | [x] | [x] | [x] | 0.53 |
+| Softmax | [x] | [x] | [x] | 0.53 |
+| Embedding | [x] | [x] | [x] | 0.53 |
+| MHA | [x] | [x] | [x] | 0.53 |
+| CNN1 | [x] | [x] | [x] | 0.53 |
+| CNN2 | [x] | [x] | [x] | 0.53 |
+| CNN3 | [x] | [x] | [x] | 0.53 |
+| ConvT1 | [x] | [x] | [x] | 0.53 |
+| ConvT2 | [x] | [x] | [x] | 0.53 |
+| ConvT3 | [x] | [x] | [x] | 0.53 |
+| RNN | [x] | [x] | [x] | 0.53 |
+| LSTM | [x] | [x] | [x] | 0.53 |
+| Sequential | [x] | [x] | [x] | 0.53 |
+| Residual | [x] | [x] | [x] | 0.53 |
+| KMeans | [x] | [x] | [x] | 0.53 |
+| Mamba | [x] | [x] | [x] | 0.53 |
+| Metacognition | [x] | [x] | [x] | 0.53 |
+| GDN | [x] | [x] | [x] | 0.53 |
+| Parallel | [x] | [x] | [x] | 0.53 |
+| Stack | [x] | [x] | [x] | 0.53 |
 
-**Status:** ⬜ not signed yet (CUDA).
-111.72 seconds with at least two measured replay iterations per fixture. The
-combined runner passed in 372.500 seconds, including 134 StepBP groups, all
-219 NormalBP groups, and the CUDA-only guard. Shared and static builds passed.
+**Validated:** 2026-10-28. The 103 MeshBP case groups passed in
+1356.030 seconds (`WELVET_CUDA_BENCH_ITERS=1`) with at least two measured
+replay iterations per fixture. Shared build passed.
 
-**Checkpoint:** ⬜ not signed yet (CUDA).
-BPTT evidence. All 22 dtype-generic families cover 111 and 211 ×34; GDN is
-Float32-only. Every family also covers 222 Float32. Shape-changing Embedding
-uses a single-tick 111 node and disabled ingress plus RMSNorm adapter nodes in
-grids; its integer indices are not fed back as embedding outputs. Remote
-self-links cover the 22 shape-preserving families with detached warmup followed
-by captured ticks. SwiGLU uses a shorter bounded recurrent trajectory to avoid
-vanishing intermediate subnormals outside the declared GPU precision contract.
+**Checkpoint:** ✅ MeshBP signed (CUDA) — all 23 supported families have actual
+mesh-clock node and grid BPTT evidence. All 22 dtype-generic families cover
+111 and 211 ×34; GDN is Float32-only. Every family also covers 222 Float32.
+Shape-changing Embedding uses a single-tick 111 node and disabled ingress plus
+RMSNorm adapter nodes in grids; its integer indices are not fed back as
+embedding outputs. Remote self-links cover the 22 shape-preserving families
+with detached warmup followed by captured ticks. SwiGLU uses a shorter bounded
+recurrent trajectory to avoid vanishing intermediate subnormals outside the
+declared GPU precision contract.
 
 Both KMeans outputs and all seven Parallel combines additionally cover ×34
 three-node clock chains, including shape-changing Concat/probabilities→Dense
@@ -2015,6 +2015,9 @@ Run: `./scripts/linux_build_w2a.sh --training-25-29-all`.
 |---|---|
 | **0.00** (M0) | CUDA host scaffold (device / buffers / smoke saxpy / C ABI / gaps). Engine board **0 / 100**. Training checklist mirrored from welvet.metal — **all rows unchecked**. |
 | **0.32** | NormalBP RNN + LSTM leaf+vol (`RNB1`/`RNV1`, `LSB1`/`LSV1`) via Dense IH/HH / 4-gate BPTT. Engine board **32 / 100**. |
+| **0.51** | NormalBP Mode 1 fully signed (23 families leaf+vol). Engine board **51 / 100**. |
+| **0.52** | StepBP Line FamilyBP (`STB1`) + Dense MeshBP (`MBP1`) + ModeMeshBP shared vols; `TestGoVCudaStepBPTrain` PASS. Engine board **52 / 100**. |
+| **0.53** | Heterogeneous MeshBP (`MGB1`/`MGBO`) all 23 families — 103 clock groups; `TestGoVCudaMeshBPTrain` PASS (~1356s @ BENCH_ITERS=1). Engine board **53 / 100**. |
 | | Tick rows + bump version as w2a `go_v_cuda` suites pass. |
 
 ## Mixed Go / C++ / CUDA routing — sign-off evidence

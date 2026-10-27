@@ -6,7 +6,7 @@ if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES OR CMAKE_CUDA_ARCHITECTURES STREQUAL "")
   set(CMAKE_CUDA_ARCHITECTURES "75")
 endif()
 
-project(welvet_cuda VERSION 0.51 LANGUAGES CXX CUDA)
+project(welvet_cuda VERSION 0.53 LANGUAGES CXX CUDA)
 
 # NVIDIA CUDA-only Welvet engine: C++ host + CUDA kernels.
 # Linux x86_64 is the primary host; Windows is a later artifact.
@@ -65,6 +65,8 @@ set(WELVET_CORE_SOURCES
   src/runtime/forward.cpp
   src/runtime/backward.cpp
   src/runtime/training.cpp
+  src/runtime/line.cpp
+  src/runtime/step.cpp
   src/systems/tween.cpp
   src/gaps/registry.cpp
   src/interop/c_abi.cpp
@@ -114,6 +116,7 @@ if(WELVET_BUILD_TOOLS)
   add_executable(welvet_dense_fwd
     tools/dense_fwd/main.cpp
     tools/dense_fwd/volume_fwd.cpp
+    tools/dense_fwd/stepbp_wires.cpp
   )
   target_include_directories(welvet_dense_fwd PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tools/dense_fwd)
   target_link_libraries(welvet_dense_fwd PRIVATE welvet)

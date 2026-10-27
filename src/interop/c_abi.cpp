@@ -51,8 +51,8 @@ welvet_status to_c(const welvet::Status& st) {
 extern "C" {
 
 const char* welvet_version(void) {
-  // Leaf FormatNone + NormalBP Mode 1 signed (TestGoVCudaNormalBP) → board 51/100.
-  return "0.51";
+  // NormalBP + StepBP + heterogeneous MeshBP (TestGoVCudaMeshBPTrain) → board 53/100.
+  return "0.53";
 }
 
 const char* welvet_runtime_identity(void) {

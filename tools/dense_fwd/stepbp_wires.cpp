@@ -1,0 +1,675 @@
+// STB1/MBP1/MGB1 StepBP + MeshBP wires (from welvet.metal dense_fwd).
+
+#include "volume_fwd.hpp"
+#include "welvet/interop/child_wire.hpp"
+
+#include "welvet/architecture.hpp"
+#include "welvet/dense.hpp"
+#include "welvet/dtype.hpp"
+#include "welvet/layer.hpp"
+#include "welvet/parallel.hpp"
+#include "welvet/runtime/line.hpp"
+#include "welvet/runtime/step.hpp"
+#include "welvet/runtime/training.hpp"
+#include "welvet/stack.hpp"
+
+#include <chrono>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <vector>
+
+static bool read_exact(void* p, size_t n) { return std::fread(p, 1, n, stdin) == n; }
+template <typename T>
+static bool read_exact(T* p, size_t n) {
+  return read_exact(static_cast<void*>(p), n * sizeof(T));
+}
+static bool write_exact(const void* p, size_t n) { return std::fwrite(p, 1, n, stdout) == n; }
+template <typename T>
+static bool write_exact(const T* p, size_t n) {
+  return write_exact(static_cast<const void*>(p), n * sizeof(T));
+}
+static bool write_magic(const char* m) { return write_exact(m, 4); }
+
+static int prod_shape(const std::vector<int32_t>& sh) {
+  int p = 1;
+  for (int32_t d : sh) p *= static_cast<int>(d);
+  return p;
+}
+
+
+// Retain the child wire so every benchmark iteration starts from identical
+// weights and configuration, including recursively nested Stack children.
+class ChildReader {
+public:
+  int depth=0;
+  bool allow_count(size_t n) const {return n<=(1<<26) && (!replay_ || n<= (replay_->size()-offset_)/4);}
+  std::vector<unsigned char> bytes;
+  explicit ChildReader(const std::vector<unsigned char>* replay = nullptr) : replay_(replay) {}
+  template <typename T> bool read(T* p, size_t n) {
+    const size_t size = n * sizeof(T);
+    if (replay_) {
+      if (offset_ > replay_->size() || size > replay_->size() - offset_) return false;
+      if (size) std::memcpy(p, replay_->data() + offset_, size);
+      offset_ += size;
+      return true;
+    }
+    if (!read_exact(p, n)) return false;
+    if (size) {
+      const auto* begin = reinterpret_cast<const unsigned char*>(p);
+      bytes.insert(bytes.end(), begin, begin + size);
+    }
+    return true;
+  }
+private:
+  const std::vector<unsigned char>* replay_;
+  size_t offset_ = 0;
+};
+
+static bool read_child(ChildReader& reader, welvet::stack::Child* ch) {
+  try { return welvet::interop::wire::read_child(reader,ch); }
+  catch(const std::exception& e){std::fprintf(stderr,"model wire: %s\n",e.what());return false;}
+}
+
+// Dense mesh-clock train (MBP1/MTW1/MTC1 share stdin layout; out_magic differs).
+int run_mesh_dense_train(int bench_iters, welvet::runtime::step::Credit credit,
+                         const char* short_hdr, const char* out_magic) {
+  int32_t depth = 0, rows = 0, cols = 0, lpc = 0, batch = 0, backend = 0, n_links = 0, ticks = 0;
+  if (!read_exact(&depth, 1) || !read_exact(&rows, 1) || !read_exact(&cols, 1) ||
+      !read_exact(&lpc, 1) || !read_exact(&batch, 1) || !read_exact(&backend, 1) ||
+      !read_exact(&n_links, 1) || !read_exact(&ticks, 1)) {
+    std::fprintf(stderr, "welvet_dense_fwd: short %s header\n", short_hdr);
+    return 2;
+  }
+  if (batch <= 0 || ticks <= 0) {
+    std::fprintf(stderr, "welvet_dense_fwd: bad batch/ticks\n");
+    return 2;
+  }
+  (void)backend;
+
+  std::vector<int32_t> links(static_cast<std::size_t>(n_links) * 8);
+  if (n_links > 0 && !read_exact(links.data(), links.size())) return 2;
+
+  struct CellInit {
+    bool enabled = false;
+    int in = 0, out = 0, act = 0, dtype = 1;
+    welvet::architecture::Coord coord{};
+    std::vector<float> W;
+    std::vector<double> bias;
+  };
+  auto hops = welvet::architecture::hop_order(
+      welvet::architecture::new_grid(depth, rows, cols, lpc));
+  std::vector<CellInit> cells;
+  cells.reserve(hops.size());
+  int first_in = -1;
+  for (const auto& coord : hops) {
+    CellInit c;
+    c.coord = coord;
+    int32_t en = 0;
+    if (!read_exact(&en, 1)) return 2;
+    c.enabled = en != 0;
+    if (!c.enabled) {
+      cells.push_back(std::move(c));
+      continue;
+    }
+    int32_t in = 0, out = 0, act = 0, dtype = 1;
+    if (!read_exact(&in, 1) || !read_exact(&out, 1) || !read_exact(&act, 1) || !read_exact(&dtype, 1)) {
+      return 2;
+    }
+    c.in = in;
+    c.out = out;
+    c.act = act;
+    c.dtype = dtype;
+    c.W.resize(static_cast<std::size_t>(out * in));
+    if (!read_exact(c.W.data(), c.W.size())) return 2;
+    uint32_t bias_len = 0;
+    if (!read_exact(&bias_len, 1)) return 2;
+    c.bias.resize(bias_len);
+    if (bias_len > 0 && !read_exact(c.bias.data(), c.bias.size())) return 2;
+    if (first_in < 0) first_in = in;
+    cells.push_back(std::move(c));
+  }
+  if (first_in < 0) {
+    std::fprintf(stderr, "welvet_dense_fwd: no enabled cells\n");
+    return 1;
+  }
+
+  welvet::TensorF32 input;
+  input.shape = {batch, first_in};
+  input.data.resize(static_cast<std::size_t>(batch * first_in));
+  if (!read_exact(input.data.data(), input.data.size())) return 2;
+
+  int final_out = 0;
+  for (auto it = cells.rbegin(); it != cells.rend(); ++it) {
+    if (it->enabled) {
+      final_out = it->out;
+      break;
+    }
+  }
+  welvet::TensorF32 target;
+  target.shape = {batch, final_out};
+  target.data.resize(static_cast<std::size_t>(batch * final_out));
+  if (!read_exact(target.data.data(), target.data.size())) return 2;
+  double lr = 0.0;
+  if (!read_exact(&lr, 1)) return 2;
+
+  welvet::architecture::Grid g;
+  double loss = 0.0;
+
+  auto rebuild_and_step = [&]() -> welvet::Status {
+    g = welvet::architecture::new_grid(depth, rows, cols, lpc);
+    for (int32_t i = 0; i < n_links; ++i) {
+      const int32_t* L = links.data() + static_cast<std::size_t>(i) * 8;
+      if (auto st = welvet::architecture::set_remote_link(g, L[0], L[1], L[2], L[3], L[4], L[5],
+                                                          L[6], L[7]);
+          !st) {
+        return st;
+      }
+    }
+    for (const auto& c : cells) {
+      if (!c.enabled) {
+        auto* cell = welvet::architecture::at(g, c.coord.z, c.coord.y, c.coord.x, c.coord.l);
+        cell->meta.is_disabled = true;
+        continue;
+      }
+      welvet::dense::Layer layer;
+      auto st = welvet::dense::new_layer(c.in, c.out, static_cast<welvet::Activation>(c.act),
+                                         static_cast<welvet::DType>(c.dtype), c.W.data(), &layer);
+      if (!st) return st;
+      if (!c.bias.empty()) layer.weights.bias = c.bias;
+      st = welvet::architecture::bind_dense(g, c.coord.z, c.coord.y, c.coord.x, c.coord.l,
+                                            std::move(layer));
+      if (!st) return st;
+    }
+    return welvet::runtime::step::train_mse(g, input, target, ticks, lr, &loss, credit);
+  };
+
+  if (bench_iters > 0) {
+    for (int i = 0; i < 3; ++i) {
+      auto st = rebuild_and_step();
+      if (!st) {
+        std::fprintf(stderr, "welvet_dense_fwd: %s\n", st.message.c_str());
+        return 1;
+      }
+    }
+    const auto t0 = std::chrono::steady_clock::now();
+    for (int i = 0; i < bench_iters; ++i) {
+      auto st = rebuild_and_step();
+      if (!st) {
+        std::fprintf(stderr, "welvet_dense_fwd: %s\n", st.message.c_str());
+        return 1;
+      }
+    }
+    const auto t1 = std::chrono::steady_clock::now();
+    const int64_t ns =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
+    const int32_t iters32 = static_cast<int32_t>(bench_iters);
+    if (!write_exact("WVB1", 4) || !write_exact(&ns, 1) || !write_exact(&iters32, 1)) {
+      return 2;
+    }
+  } else {
+    auto st = rebuild_and_step();
+    if (!st) {
+      std::fprintf(stderr, "welvet_dense_fwd: %s\n", st.message.c_str());
+      return 1;
+    }
+  }
+
+  if (!write_magic(out_magic) || !write_exact(&loss, 1)) return 2;
+  int32_t n_cells = 0;
+  for (const auto& c : cells) {
+    if (c.enabled) ++n_cells;
+  }
+  if (!write_exact(&n_cells, 1)) return 2;
+  for (const auto& c : cells) {
+    if (!c.enabled) continue;
+    auto* cell = welvet::architecture::at(g, c.coord.z, c.coord.y, c.coord.x, c.coord.l);
+    if (!cell) return 1;
+    const int32_t o = c.out, i = c.in;
+    std::vector<float> Wa(static_cast<std::size_t>(o * i));
+    auto est = cell->dense_op.weights.export_f32(Wa.data());
+    if (!est) {
+      std::fprintf(stderr, "welvet_dense_fwd: %s\n", est.message.c_str());
+      return 1;
+    }
+    if (!write_exact(&o, 1) || !write_exact(&i, 1) || !write_exact(Wa.data(), Wa.size())) return 2;
+  }
+  return 0;
+}
+
+int run_meshbp(int bench_iters) {
+  return run_mesh_dense_train(bench_iters, welvet::runtime::step::Credit::FamilyBP, "MBP1", "MBPO");
+}
+
+// MGB1: heterogeneous mesh-clock BPTT. All tensors, gradients and per-tick
+// snapshots are exported for w2a; no CPU numerical reference is linked here.
+namespace {
+welvet::Status bind_mesh_child(welvet::architecture::Grid& grid, const welvet::architecture::Coord& c,
+                               welvet::stack::Child child) {
+  using namespace welvet;
+  switch (child.kind) {
+  case stack::Kind::Dense:
+    return architecture::bind_dense(grid, c.z, c.y, c.x, c.l, std::move(child.dense_op));
+  case stack::Kind::RMSNorm:
+    return architecture::bind_rmsnorm(grid, c.z, c.y, c.x, c.l, std::move(child.rmsnorm_op));
+  case stack::Kind::LayerNorm:
+    return architecture::bind_layernorm(grid, c.z, c.y, c.x, c.l, std::move(child.layernorm_op));
+  case stack::Kind::SwiGLU:
+    return architecture::bind_swiglu(grid, c.z, c.y, c.x, c.l, std::move(child.swiglu_op));
+  case stack::Kind::Softmax:
+    return architecture::bind_softmax(grid, c.z, c.y, c.x, c.l, std::move(child.softmax_op));
+  case stack::Kind::Embedding:
+    return architecture::bind_embedding(grid, c.z, c.y, c.x, c.l, std::move(child.embedding_op));
+  case stack::Kind::MHA:
+    return architecture::bind_mha(grid, c.z, c.y, c.x, c.l, std::move(child.mha_op));
+  case stack::Kind::CNN1:
+    return architecture::bind_cnn1(grid, c.z, c.y, c.x, c.l, std::move(child.cnn1_op));
+  case stack::Kind::CNN2:
+    return architecture::bind_cnn2(grid, c.z, c.y, c.x, c.l, std::move(child.cnn2_op));
+  case stack::Kind::CNN3:
+    return architecture::bind_cnn3(grid, c.z, c.y, c.x, c.l, std::move(child.cnn3_op));
+  case stack::Kind::ConvT1:
+    return architecture::bind_convt1(grid, c.z, c.y, c.x, c.l, std::move(child.convt1_op));
+  case stack::Kind::ConvT2:
+    return architecture::bind_convt2(grid, c.z, c.y, c.x, c.l, std::move(child.convt2_op));
+  case stack::Kind::ConvT3:
+    return architecture::bind_convt3(grid, c.z, c.y, c.x, c.l, std::move(child.convt3_op));
+  case stack::Kind::RNN:
+    return architecture::bind_rnn(grid, c.z, c.y, c.x, c.l, std::move(child.rnn_op));
+  case stack::Kind::LSTM:
+    return architecture::bind_lstm(grid, c.z, c.y, c.x, c.l, std::move(child.lstm_op));
+  case stack::Kind::Sequential:
+    return architecture::bind_sequential(grid, c.z, c.y, c.x, c.l, std::move(child.sequential_op));
+  case stack::Kind::Residual:
+    return architecture::bind_residual(grid, c.z, c.y, c.x, c.l, std::move(child.residual_op));
+  case stack::Kind::Mamba:
+    return architecture::bind_mamba(grid, c.z, c.y, c.x, c.l, std::move(child.mamba_op));
+  case stack::Kind::Metacognition:
+    return architecture::bind_metacognition(grid, c.z, c.y, c.x, c.l, std::move(child.metacognition_op));
+  case stack::Kind::GDN:
+    return architecture::bind_gdn(grid, c.z, c.y, c.x, c.l, std::move(child.gdn_op));
+  case stack::Kind::KMeans:
+    return architecture::bind_kmeans(grid, c.z, c.y, c.x, c.l, std::move(child.kmeans_op));
+  case stack::Kind::NestedStack: {
+    stack::Layer layer;
+    layer.children = std::move(child.nested);
+    return architecture::bind_stack(grid, c.z, c.y, c.x, c.l, std::move(layer));
+  }
+  case stack::Kind::Parallel: {
+    parallel::Layer layer;
+    const auto& p = child.parallel_nest;
+    layer.cfg = {p.dim, p.out_feat, int(child.nested.size()), parallel::Combine(p.combine), p.seq_len,
+                 p.sparse_k, p.disagree_beta};
+    layer.branches = std::move(child.nested);
+    if (p.has_gate) layer.gate = std::move(child.dense_op);
+    return architecture::bind_parallel(grid, c.z, c.y, c.x, c.l, std::move(layer));
+  }
+  default:
+    return Status::Err(StatusCode::InvalidArgument, "mesh: invalid child");
+  }
+}
+welvet::stack::Child take_mesh_child(welvet::architecture::Cell& cell) {
+  using namespace welvet;
+  stack::Child child;
+  child.kind = stack::Kind(int(cell.op_kind));
+  switch (child.kind) {
+  case stack::Kind::Dense:
+    child.dense_op = std::move(cell.dense_op);
+    break;
+  case stack::Kind::RMSNorm:
+    child.rmsnorm_op = std::move(cell.rmsnorm_op);
+    break;
+  case stack::Kind::LayerNorm:
+    child.layernorm_op = std::move(cell.layernorm_op);
+    break;
+  case stack::Kind::SwiGLU:
+    child.swiglu_op = std::move(cell.swiglu_op);
+    break;
+  case stack::Kind::Softmax:
+    child.softmax_op = std::move(cell.softmax_op);
+    break;
+  case stack::Kind::Embedding:
+    child.embedding_op = std::move(cell.embedding_op);
+    break;
+  case stack::Kind::MHA:
+    child.mha_op = std::move(cell.mha_op);
+    break;
+  case stack::Kind::CNN1:
+    child.cnn1_op = std::move(cell.cnn1_op);
+    break;
+  case stack::Kind::CNN2:
+    child.cnn2_op = std::move(cell.cnn2_op);
+    break;
+  case stack::Kind::CNN3:
+    child.cnn3_op = std::move(cell.cnn3_op);
+    break;
+  case stack::Kind::ConvT1:
+    child.convt1_op = std::move(cell.convt1_op);
+    break;
+  case stack::Kind::ConvT2:
+    child.convt2_op = std::move(cell.convt2_op);
+    break;
+  case stack::Kind::ConvT3:
+    child.convt3_op = std::move(cell.convt3_op);
+    break;
+  case stack::Kind::RNN:
+    child.rnn_op = std::move(cell.rnn_op);
+    break;
+  case stack::Kind::LSTM:
+    child.lstm_op = std::move(cell.lstm_op);
+    break;
+  case stack::Kind::Sequential:
+    child.sequential_op = std::move(cell.sequential_op);
+    break;
+  case stack::Kind::Residual:
+    child.residual_op = std::move(cell.residual_op);
+    break;
+  case stack::Kind::Mamba:
+    child.mamba_op = std::move(cell.mamba_op);
+    break;
+  case stack::Kind::Metacognition:
+    child.metacognition_op = std::move(cell.metacognition_op);
+    break;
+  case stack::Kind::GDN:
+    child.gdn_op = std::move(cell.gdn_op);
+    break;
+  case stack::Kind::KMeans:
+    child.kmeans_op = std::move(cell.kmeans_op);
+    break;
+  case stack::Kind::NestedStack:
+    child.nested = std::move(cell.stack_op.children);
+    break;
+  case stack::Kind::Parallel: {
+    const auto& p = cell.parallel_op.cfg;
+    child.parallel_nest = {int(p.combine), p.dim, p.out_feat, p.seq_len, p.sparse_k, p.disagree_beta,
+                           cell.parallel_op.gate ? 1 : 0};
+    child.nested = std::move(cell.parallel_op.branches);
+    if (cell.parallel_op.gate) child.dense_op = std::move(*cell.parallel_op.gate);
+    break;
+  }
+  default:
+    break;
+  }
+  return child;
+}
+bool read_mesh_tensor(welvet::TensorF32* t) {
+  int32_t rank;
+  if (!read_exact(&rank, 1) || rank < 1 || rank > 5) return false;
+  std::vector<int32_t> shape(static_cast<std::size_t>(rank));
+  if (!read_exact(shape.data(), shape.size())) return false;
+  size_t count = 1;
+  for (int d : shape) {
+    if (d <= 0 || count > size_t(1 << 26) / size_t(d)) return false;
+    count *= size_t(d);
+  }
+  t->shape.assign(shape.begin(), shape.end());
+  t->data.resize(count);
+  return read_exact(t->data.data(), count);
+}
+bool write_mesh_tensor(const welvet::TensorF32& t) {
+  int32_t rank = int(t.shape.size()), count = int(t.data.size());
+  if (!write_exact(&rank, 1)) return false;
+  for (auto d : t.shape) {
+    int32_t dim = int32_t(d);
+    if (!write_exact(&dim, 1)) return false;
+  }
+  return write_exact(&count, 1) && write_exact(t.data.data(), t.data.size());
+}
+} // namespace
+
+int run_mesh_generic_bp(int bench_iters, bool tween, const char* out_magic, int proxy_volume,
+                        int mesh_family) {
+  using namespace welvet;
+  int32_t depth, rows, cols, lpc, ticks, warmup, n_links;
+  double lr;
+  if (!read_exact(&depth, 1) || !read_exact(&rows, 1) || !read_exact(&cols, 1) || !read_exact(&lpc, 1) ||
+      !read_exact(&ticks, 1) || !read_exact(&warmup, 1) || !read_exact(&lr, 1) ||
+      !read_exact(&n_links, 1))
+    return 2;
+  size_t cell_count = 1;
+  for (int d : {depth, rows, cols, lpc}) {
+    if (d <= 0 || cell_count > 4096 / size_t(d)) return 2;
+    cell_count *= size_t(d);
+  }
+  if (ticks <= 0 || ticks > 4096 || warmup < 0 || warmup > 4096 || n_links < 0 || n_links > 4096)
+    return 2;
+  std::vector<int32_t> links(static_cast<std::size_t>(n_links) * 8);
+  if (!read_exact(links.data(), links.size())) return 2;
+  auto empty = architecture::new_grid(depth, rows, cols, lpc);
+  const auto coords = architecture::hop_order(empty);
+  std::vector<int32_t> enabled(coords.size());
+  ChildReader initial;
+  for (size_t i = 0; i < coords.size(); ++i) {
+    if (!read_exact(&enabled[i], 1)) return 2;
+    if (enabled[i]) {
+      stack::Child child;
+      if (!read_child(initial, &child)) return 2;
+    }
+  }
+  TensorF32 input, target, post, gin;
+  if (!read_mesh_tensor(&input) || !read_mesh_tensor(&target)) return 2;
+  architecture::Grid grid;
+  runtime::step::State state;
+  std::vector<TensorF32> grads;
+  std::vector<std::vector<TensorF32>> posts;
+  std::vector<std::vector<float>> weights;
+  double loss = 0;
+  auto once = [&]() -> Status {
+    grid = architecture::new_grid(depth, rows, cols, lpc);
+    state = {};
+    posts.clear();
+    weights.clear();
+    ChildReader replay(&initial.bytes);
+    for (size_t i = 0; i < coords.size(); ++i) {
+      const auto& c = coords[i];
+      if (!enabled[i]) {
+        architecture::at(grid, c.z, c.y, c.x, c.l)->meta.is_disabled = true;
+        continue;
+      }
+      stack::Child child;
+      if (!read_child(replay, &child)) return Status::Gap("mesh replay");
+      if (auto st = bind_mesh_child(grid, c, std::move(child)); !st) return st;
+    }
+    runtime::step::ensure_size(&state, int(coords.size()));
+    for (int t = 0; t < warmup; ++t) {
+      runtime::step::set_input(&state, input);
+      if (auto st = runtime::step::forward(grid, &state, false); !st) return st;
+    }
+    for (int i = 0; i < n_links; ++i) {
+      auto* q = links.data() + 8 * i;
+      if (auto st = architecture::set_remote_link(grid, q[0], q[1], q[2], q[3], q[4], q[5], q[6], q[7]);
+          !st)
+        return st;
+    }
+    if (proxy_volume) {
+      // Volume-proxy mesh variants land with TweenSplit*; MeshBP uses the step clock.
+      return Status::Gap("mesh proxy_volume not wired on CUDA");
+    }
+    for (int t = 0; t < ticks; ++t) {
+      runtime::step::set_input(&state, input);
+      if (auto st = runtime::step::forward(grid, &state, true); !st) return st;
+      posts.push_back(state.layer_data);
+    }
+    post = state.layer_data.back();
+    if (auto st = runtime::training::mse(post, target, &loss); !st) return st;
+    TensorF32 gy;
+    if (auto st = runtime::training::mse_grad(post, target, &gy); !st) return st;
+    if (tween || mesh_family > 0) {
+      gin = {};
+      grads.assign(coords.size(), {});
+      auto credit = mesh_family > 0 ? static_cast<runtime::step::Credit>(mesh_family)
+                                   : runtime::step::Credit::FamilyTween;
+      if (auto st = runtime::step::apply_credit(grid, state, gy, lr, credit); !st) return st;
+    } else {
+      if (auto st = runtime::step::backward(grid, &state, gy, &gin, &grads); !st) return st;
+      if (auto st = runtime::step::apply_sgd(grid, grads, lr); !st) return st;
+    }
+    weights.resize(coords.size());
+    for (size_t i = 0; i < coords.size(); ++i)
+      if (enabled[i]) {
+        auto child = take_mesh_child(grid.cells[i]);
+        weights[i].resize(stack::child_grad_w_size(child));
+        if (!weights[i].empty())
+          if (auto st = stack::child_export_f32(child, weights[i].data()); !st) return st;
+      }
+    return Status::Ok();
+  };
+  const auto start = std::chrono::steady_clock::now();
+  for (int i = 0; i < (bench_iters > 0 ? bench_iters : 1); ++i)
+    if (auto st = once(); !st) {
+      std::fprintf(stderr, "mesh BPTT: %s\n", st.message.c_str());
+      return 1;
+    }
+  if (bench_iters > 0) {
+    int64_t ns =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start)
+            .count();
+    int32_t n = bench_iters;
+    if (!write_magic("WVB1") || !write_exact(&ns, 1) || !write_exact(&n, 1)) return 2;
+  }
+  if (!write_magic(out_magic ? out_magic : (tween ? "MGWO" : "MGBO")) || !write_exact(&loss, 1) ||
+      !write_mesh_tensor(post) || !write_mesh_tensor(gin))
+    return 2;
+  int32_t n = int(coords.size());
+  if (!write_exact(&n, 1)) return 2;
+  for (int i = 0; i < n; ++i) {
+    auto packed = grads[static_cast<std::size_t>(i)];
+    if (!packed.data.empty()) packed.shape = {int64_t(packed.data.size())};
+    if (!write_mesh_tensor(packed)) return 2;
+    int32_t size = int(weights[static_cast<std::size_t>(i)].size());
+    if (!write_exact(&size, 1) ||
+        !write_exact(weights[static_cast<std::size_t>(i)].data(),
+                     weights[static_cast<std::size_t>(i)].size()))
+      return 2;
+  }
+  if (!write_exact(&ticks, 1)) return 2;
+  for (int t = 0; t < ticks; ++t)
+    for (int i = 0; i < n; ++i)
+      if (!write_mesh_tensor(state.history_in[static_cast<std::size_t>(t)][static_cast<std::size_t>(i)]) ||
+          !write_mesh_tensor(
+              state.history_pre[static_cast<std::size_t>(t)][static_cast<std::size_t>(i)]) ||
+          !write_mesh_tensor(posts[static_cast<std::size_t>(t)][static_cast<std::size_t>(i)]))
+        return 2;
+  return 0;
+}
+
+int run_stepbp(int bench_iters, welvet::runtime::line::Credit credit, const char* response) {
+  int32_t n_children = 0, n_ticks = 0, batch = 0;
+  double lr = 0.0;
+  if (!read_exact(&n_children, 1) || !read_exact(&n_ticks, 1) || !read_exact(&batch, 1) ||
+      !read_exact(&lr, 1)) {
+    std::fprintf(stderr, "welvet_dense_fwd: short STB1 header\n");
+    return 2;
+  }
+  if (n_children <= 0 || n_ticks <= 0 || batch <= 0) return 1;
+
+  ChildReader initial;
+  welvet::stack::Layer stack;
+  stack.meta.type = welvet::LayerType::Stack;
+  stack.children.resize(static_cast<std::size_t>(n_children));
+  for (int32_t i = 0; i < n_children; ++i) {
+    if (!read_child(initial, &stack.children[static_cast<std::size_t>(i)])) {
+      std::fprintf(stderr, "welvet_dense_fwd: bad STB1 child %d\n", i);
+      return 2;
+    }
+  }
+
+  int32_t x_ndim = 0, t_ndim = 0;
+  if (!read_exact(&x_ndim, 1) || x_ndim <= 0 || x_ndim > 5) return 2;
+  std::vector<int32_t> x_shape(static_cast<std::size_t>(x_ndim));
+  if (!read_exact(x_shape.data(), x_shape.size())) return 2;
+  if (!read_exact(&t_ndim, 1) || t_ndim <= 0 || t_ndim > 5) return 2;
+  std::vector<int32_t> t_shape(static_cast<std::size_t>(t_ndim));
+  if (!read_exact(t_shape.data(), t_shape.size())) return 2;
+  const int x_len = prod_shape(x_shape);
+  const int t_len = prod_shape(t_shape);
+
+  std::vector<std::vector<float>> xs(static_cast<std::size_t>(n_ticks));
+  std::vector<std::vector<float>> tgts(static_cast<std::size_t>(n_ticks));
+  for (int32_t t = 0; t < n_ticks; ++t) {
+    xs[static_cast<std::size_t>(t)].resize(static_cast<std::size_t>(x_len));
+    tgts[static_cast<std::size_t>(t)].resize(static_cast<std::size_t>(t_len));
+    if (!read_exact(xs[static_cast<std::size_t>(t)].data(),
+                    xs[static_cast<std::size_t>(t)].size()) ||
+        !read_exact(tgts[static_cast<std::size_t>(t)].data(),
+                    tgts[static_cast<std::size_t>(t)].size())) {
+      return 2;
+    }
+  }
+  (void)batch;
+
+  double loss = 0.0;
+  auto once = [&]() -> welvet::Status {
+    stack = welvet::stack::Layer{};
+    stack.meta.type = welvet::LayerType::Stack;
+    stack.children.resize(static_cast<std::size_t>(n_children));
+    ChildReader replay(&initial.bytes);
+    for (auto& child : stack.children) {
+      if (!read_child(replay, &child)) {
+        return welvet::Status::Err(welvet::StatusCode::Internal, "bad STB1 replay child");
+      }
+    }
+    welvet::runtime::line::State st;
+    loss = 0.0;
+    for (int32_t t = 0; t < n_ticks; ++t) {
+      welvet::TensorF32 xin;
+      xin.shape.assign(x_shape.begin(), x_shape.end());
+      xin.data = xs[static_cast<std::size_t>(t)];
+      welvet::TensorF32 tgt;
+      tgt.shape.assign(t_shape.begin(), t_shape.end());
+      tgt.data = tgts[static_cast<std::size_t>(t)];
+      double tick_loss = 0.0;
+      if (auto s = welvet::runtime::line::train_mse(stack, &st, xin, tgt, lr, &tick_loss, credit); !s) {
+        return s;
+      }
+      loss = tick_loss;
+    }
+    return welvet::Status::Ok();
+  };
+
+  if (bench_iters > 0) {
+    // Warmup + timed; reset the fixture before every run.
+    for (int i = 0; i < 2; ++i) {
+      auto st = once();
+      if (!st) {
+        std::fprintf(stderr, "welvet_dense_fwd: %s\n", st.message.c_str());
+        return 1;
+      }
+    }
+    const auto t0 = std::chrono::steady_clock::now();
+    for (int i = 0; i < bench_iters; ++i) {
+      auto st = once();
+      if (!st) {
+        std::fprintf(stderr, "welvet_dense_fwd: %s\n", st.message.c_str());
+        return 1;
+      }
+    }
+    const auto t1 = std::chrono::steady_clock::now();
+    const int64_t ns =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
+    const int32_t iters32 = static_cast<int32_t>(bench_iters);
+    if (!write_exact("WVB1", 4) || !write_exact(&ns, 1) || !write_exact(&iters32, 1)) return 2;
+  } else {
+    if (auto st = once(); !st) {
+      std::fprintf(stderr, "welvet_dense_fwd: %s\n", st.message.c_str());
+      return 1;
+    }
+  }
+
+  if (!write_magic(response) || !write_exact(&loss, 1) || !write_exact(&n_children, 1)) return 2;
+  for (int32_t i = 0; i < n_children; ++i) {
+    const auto& ch = stack.children[static_cast<std::size_t>(i)];
+    const int32_t nw = welvet::stack::child_grad_w_size(ch);
+    std::vector<float> Wa(static_cast<std::size_t>(nw));
+    if (nw > 0) {
+      auto est = welvet::stack::child_export_f32(ch, Wa.data());
+      if (!est) {
+        std::fprintf(stderr, "welvet_dense_fwd: %s\n", est.message.c_str());
+        return 1;
+      }
+    }
+    if (!write_exact(&nw, 1)) return 2;
+    if (nw > 0 && !write_exact(Wa.data(), Wa.size())) return 2;
+  }
+  return 0;
+}
