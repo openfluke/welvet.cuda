@@ -6,7 +6,7 @@ if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES OR CMAKE_CUDA_ARCHITECTURES STREQUAL "")
   set(CMAKE_CUDA_ARCHITECTURES "75")
 endif()
 
-project(welvet_cuda VERSION 0.13 LANGUAGES CXX CUDA)
+project(welvet_cuda VERSION 0.27 LANGUAGES CXX CUDA)
 
 # NVIDIA CUDA-only Welvet engine: C++ host + CUDA kernels.
 # Linux x86_64 is the primary host; Windows is a later artifact.
@@ -39,6 +39,27 @@ set(WELVET_CORE_SOURCES
   src/weights/native_codec.cpp
   src/layers/dense/dense.cpp
   src/layers/dense/session.cpp
+  src/layers/rmsnorm/rmsnorm.cpp
+  src/layers/layernorm/layernorm.cpp
+  src/layers/softmax/softmax.cpp
+  src/layers/swiglu/swiglu.cpp
+  src/layers/embedding/embedding.cpp
+  src/layers/mha/mha.cpp
+  src/layers/cnn1/cnn1.cpp
+  src/layers/cnn2/cnn2.cpp
+  src/layers/cnn3/cnn3.cpp
+  src/layers/convt1/convt1.cpp
+  src/layers/convt2/convt2.cpp
+  src/layers/convt3/convt3.cpp
+  src/layers/rnn/rnn.cpp
+  src/layers/lstm/lstm.cpp
+  src/layers/sequential/sequential.cpp
+  src/layers/residual/residual.cpp
+  src/layers/mamba/mamba.cpp
+  src/layers/metacognition/metacognition.cpp
+  src/layers/gdn/gdn.cpp
+  src/layers/kmeans/kmeans.cpp
+  src/layers/parallel/parallel.cpp
   src/architecture/grid.cpp
   src/runtime/forward.cpp
   src/runtime/backward.cpp

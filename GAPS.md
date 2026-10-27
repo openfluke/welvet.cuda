@@ -3,7 +3,7 @@
 **Authoritative checklist:** [README.md](README.md) — full Go Welvet inventory as CUDA rebuild gates (3D volumetric engine). Tick there.  
 **Training detail:** [docs/TRAINING_CHECKLIST.md](docs/TRAINING_CHECKLIST.md).
 
-**Version `0.13`** — engine board **13 / 100**. This file is the machine-oriented dump (`welvet_dense_fwd --gaps`).
+**Version `0.27`** — engine board **27 / 100**. This file is the machine-oriented dump (`welvet_dense_fwd --gaps`).
 
 ```bash
 ./scripts/build_linux.sh
@@ -11,23 +11,25 @@
 ./build/welvet_dense_fwd --version
 ./build/welvet_dense_fwd --identity
 ./build/welvet_dense_fwd --gaps
-./scripts/linux_build_w2a.sh --dense-fwd
+./scripts/linux_build_w2a.sh --leaf-fwd-all
 ```
 
 ## Done
 
 | ID | Detail |
 |---|---|
-| CUDA device | `cudaGetDevice` / props, runtime identity |
-| Kernels | nvcc compile `src/cuda/kernels.cu` (smoke + f64 MatVec) |
-| Device buffers | `cudaMalloc` / upload / download |
-| Smoke launch | `welvet_smoke_saxpy` |
-| C ABI | version / init / gaps counters |
-| Linux build | `scripts/build_linux.sh` |
-| FormatNone×34 | pack/decode + Dense forward gates |
-| Dense forward CUDA | HW f64 MatVec + bias/act; w2a exact_bit×34 |
-| w2a go_v_cuda | Dense forward parity + Go/C++/CUDA speed |
+| M0 CUDA host | device, buffers, smoke, C ABI, Linux build |
+| FormatNone×34 | pack/decode + Dense MatVec path |
+| Leaf FormatNone forward | Dense, MHA, SwiGLU, RMSNorm, LayerNorm, Softmax, Embedding, CNN1–3, ConvT1–3, RNN, LSTM, Sequential, Residual, Mamba, Metacognition, GDN(f32), KMeans, Parallel, seqmix — w2a exact_bit |
+| w2a go_v_cuda | leaf forward parity + Go/C++/CUDA speed |
 
 ## Open
 
-Dense NormalBP, other layers, volume/runtime, train modes, systems, model/IO, lucy, CamSync, peak fused, NAC, Windows — see [README.md](README.md).
+| ID | Detail |
+|---|---|
+| Stack leaf | no wire magic — lands with NormalBP `STKB` |
+| NormalBP / train | all layers + 29 TrainModes |
+| Volume forward | `*G1` / `WRF1`… mount-all |
+| Runtime / systems / model / lucy / CamSync / peak fused / NAC / Windows | see README |
+
+Live counters: `./build/welvet_dense_fwd --gaps` (done=32 open=30 at last census).

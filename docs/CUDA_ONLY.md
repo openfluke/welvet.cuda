@@ -14,14 +14,14 @@ one backend to the other, and **no host numerical fallback** labeled as CUDA.
 - Compiled smoke kernel `welvet_smoke_saxpy`
 - C ABI: version / init / available / gaps
 
-**M1** (engine credit — Dense FormatNone forward):
+**M1+** (engine credit — leaf FormatNone forwards):
 
-- FormatNone×34 decode → resident **HW float64** MatVec on CUDA
-- Bias + activation on device
-- Wire tool `welvet_dense_fwd` (`WVD3`/`WVO1`) — w2a `go_v_cuda` exact_bit×34
+- FormatNone×34 decode → resident **HW float64** MatVec / layer kernels on CUDA
+- Dense + 21 other layers + seqmix leaf forward (Stack deferred to NormalBP)
+- Wire tool `welvet_dense_fwd` multiplexes leaf magics — w2a `go_v_cuda` exact_bit×34
 
-Everything else is gap until ticked in [TRAINING_CHECKLIST.md](TRAINING_CHECKLIST.md)
-and the [README runway](../README.md).
+Everything else (NormalBP, volume, train modes, …) is gap until ticked in
+[TRAINING_CHECKLIST.md](TRAINING_CHECKLIST.md) and the [README runway](../README.md).
 
 ## Non-negotiable
 
@@ -40,8 +40,9 @@ and the [README runway](../README.md).
 ./build/welvet_dense_fwd --identity
 ./build/welvet_dense_fwd --gaps
 ./scripts/linux_build_w2a.sh --smoke
-./scripts/linux_build_w2a.sh --dense-fwd
+./scripts/linux_build_w2a.sh --leaf-fwd-all
 ```
+
 
 Tests and CPU parity references live in sibling `w2a`, not this repository.
 Shared artifact: `libwelvet_cuda.so`. Requires CMake + NVIDIA CUDA Toolkit (`nvcc`)

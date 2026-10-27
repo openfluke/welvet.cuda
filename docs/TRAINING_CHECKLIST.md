@@ -9,8 +9,8 @@ Canonical enum: Go `layers/parallel/train_mode.go` (`TrainMode`).
 and [`welvet.cpp/docs/TRAINING_CHECKLIST.md`](../../welvet.cpp/docs/TRAINING_CHECKLIST.md).
 Same cases / wires / column meanings; status here is **CUDA** only. metal/cpp checkmarks do **not** transfer credit.
 
-**Current engine:** `0.13` (M1 Dense FormatNone forward — **13 / 100** on the engine board).
-Dense forward signed via w2a `TestGoVCudaDenseForward` (exact_bit×34 + speed). **No training rows signed yet.**
+**Current engine:** `0.27` (leaf FormatNone forwards — **27 / 100** on the engine board).
+Leaf forward signed for Dense + 21 other layers + seqmix via w2a `go_v_cuda` (Stack deferred to NormalBP). **No training rows signed yet.**
 
 ---
 
@@ -28,23 +28,40 @@ Validation lives in sibling **w2a** (`go_v_cuda`), not in this tree — same pat
 ```sh
 ./scripts/build_linux.sh
 ./scripts/linux_build_w2a.sh --smoke
-./scripts/linux_build_w2a.sh --dense-fwd   # Dense FormatNone×34 forward (signed)
+./scripts/linux_build_w2a.sh --leaf-fwd-all   # all leaf FormatNone forwards (signed)
 # as suites land:
 # ./scripts/linux_build_w2a.sh --dense-train
 # ./scripts/linux_build_w2a.sh --normalbp-all
 # ./scripts/linux_build_w2a.sh --training-all
 ```
 
-## w2a Go↔CUDA (Dense FormatNone forward) — signed
+## w2a Go↔CUDA (leaf FormatNone forward) — signed
 
-Run: `./scripts/linux_build_w2a.sh --dense-fwd`  
-Wire: `WVD3`/`WVO1` (Dense forward). Exact tensor bits vs Go. Speed: Go / C++ / CUDA warm-exec.
+Run: `./scripts/linux_build_w2a.sh --leaf-fwd-all` (or per-layer `--*-fwd`).  
+Exact tensor bits vs Go (+ cpp speed column when present). Stack has no leaf forward magic.
 
-| # | Case | Status | Notes |
-|---|---|:---:|---|
-| 1 | Leaf Float32 identity+bias | [x] | exact_bit |
-| 2 | Leaf Float32 ReLU | [x] | exact_bit |
-| 3 | Leaf × all 34 FormatNone dtypes | [x] | exact_bit 100%; CUDA warm-exec wins 34/34 (GTX 1650 SUPER) |
+| Layer | Test | Wire | Status |
+|---|---|---|:---:|
+| Dense | `TestGoVCudaDenseForward` | `WVD3`→`WVO1` | [x] |
+| RMSNorm | `TestGoVCudaRMSNorm` | `WVR1`→`WVRO` | [x] |
+| LayerNorm | `TestGoVCudaLayerNorm` | `WVL1`→`WVLO` | [x] |
+| Softmax | `TestGoVCudaSoftmax` | `WSM1`→`WSMO` | [x] |
+| SwiGLU | `TestGoVCudaSwiGLU` | `WVS1`→`WVSO` | [x] |
+| Embedding | `TestGoVCudaEmbedding` | `WEM1`→`WEMO` | [x] |
+| MHA | `TestGoVCudaMHA` | `WVM1`→`WVMO` | [x] |
+| CNN1/2/3 | `TestGoVCudaCNN` | `WVC*`→`WVCO` | [x] |
+| ConvT1/2/3 | `TestGoVCudaConvT` | `WVT*`→`WVTO` | [x] |
+| RNN | `TestGoVCudaRNN` | `WRN1`→`WRNO` | [x] |
+| LSTM | `TestGoVCudaLSTM` | `WLS1`→`WLSO` | [x] |
+| Sequential | `TestGoVCudaSequential` | `WSQ1`→`WSQO` | [x] |
+| Residual | `TestGoVCudaResidual` | `WRE1`→`WREO` | [x] |
+| Mamba | `TestGoVCudaMamba` | `WMB1`→`WMBO` | [x] |
+| Metacognition | `TestGoVCudaMetacognition` | `WMC1`→`WMCO` | [x] |
+| GDN | `TestGoVCudaGDN` | `WGD1`→`WGDO` | [x] f32 |
+| KMeans | `TestGoVCudaKMeans` | `WKM1`→`WKMO` | [x] |
+| Parallel | `TestGoVCudaParallel` | `WPL1`→`WPLO` | [x] |
+| seqmix | `TestGoVCudaSeqmix` | `WSX1`→`WSXO` | [x] |
+| Stack | — | (NormalBP `STKB`) | [ ] |
 
 ## w2a Go↔CUDA (Freeze / Shadow / Adversarial / Memory / Cameral / CamSync) — sign-off evidence
 
