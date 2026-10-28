@@ -8,7 +8,7 @@ It will run directly from C++ and through a stable C ABI. Go Welvet can later de
 
 | | |
 |--|--|
-| **Version** | **`0.54`** |
+| **Version** | **`0.55`** |
 | **Engine board** | **53 / 100** (same 10 categories as Go Welvet) |
 | **Compute** | NVIDIA GPU (CUDA) — primary · CPU / Metal / QNN siblings remain separate repos — never implied |
 | **Parity reference** | [welvet](https://github.com/openfluke/welvet) Go **v1.2.0** (100/100) |
@@ -22,7 +22,7 @@ It will run directly from C++ and through a stable C ABI. Go Welvet can later de
 ```bash
 ./scripts/build_linux.sh
 ./build/example_cuda_smoke
-./build/welvet_dense_fwd --version   # 0.54
+./build/welvet_dense_fwd --version   # 0.55
 ./build/welvet_dense_fwd --identity
 ./build/welvet_dense_fwd --gaps
 ./scripts/linux_build_w2a.sh --leaf-fwd-all
@@ -185,11 +185,11 @@ Identical ten categories / weights as Go Welvet. Credit only from **this** CUDA 
 | 4 | **CNN / RNN / LSTM** | 6 | CNN1–3 + RNN + LSTM leaf fwd + NormalBP | ✅ | **6** |
 | 5 | **Extended layers** — GDN, ConvT1–3, Mamba, KMeans, Parallel, Metacognition | 7 | leaf fwd + NormalBP (incl. Stack); seqmix metadata | ✅ | **7** |
 | 6 | **Runtime + architecture** — volumetric grid, forward, backward, training, step/mesh | 8 | Volume NormalBP + StepBP Line + heterogeneous MeshBP | 🚧 | **5** |
-| 7 | **Systems** — dna, evolution, tween, tanhi, telemetry | 5 | systems/tween ModeTween | 🚧 | **1** |
+| 7 | **Systems** — dna, evolution, tween, tanhi, telemetry | 5 | systems/tween + tween_chain | 🚧 | **1** |
 | 8 | **Model / IO** — tokenizer, entity, transformer, sampling, hf | 8 | — | ⬜ | **0** |
-| 9 | **Training credit** — 29 modes + cameral BranchModes / CamSync | 8 | NormalBP + StepBP + MeshBP + ModeTween signed; remaining Tween* open | 🚧 | **0** |
+| 9 | **Training credit** — 29 modes + cameral BranchModes / CamSync | 8 | NormalBP + StepBP + MeshBP + ModeTween + ModeTweenChain; remaining Tween* open | 🚧 | **1** |
 | 10 | **Peak fused / no host ALU** — fused CUDA kernels, decoder fuse, provenance | 14 | — | ⬜ | **0** |
-| | **Total → version** | **100** | | **🚧** | **54 / 100 → `0.54`** |
+| | **Total → version** | **100** | | **🚧** | **55 / 100 → `0.55`** |
 
 **Path to 1.0:** same order Go used / welvet.cpp is following — Dense FormatNone + NormalBP → layers → Step/Mesh/Tween* → Systems + Model/IO → CamSync + peak fused CUDA. welvet.cpp’s ✅ list is the **port order**, not transferred credit.
 
@@ -228,7 +228,7 @@ Identical ten categories / weights as Go Welvet. Credit only from **this** CUDA 
 |---|---:|---|:---:|---:|
 | `systems/dna/` | 1 | Encode/decode topology + params; native dtype preserved | ⬜ | 0 |
 | `systems/evolution/` | 1 | DNA splice, mutation, cloning, NEAT-compatible behavior | ⬜ | 0 |
-| `systems/tween/` | 1 | ModeTween project_gap + apply_projected + train_volume_mse | ✅ | 1 |
+| `systems/tween/` | 1 | ModeTween project_gap + apply_projected + train_volume_mse (+ ModeTweenChain sibling) | ✅ | 1 |
 | `systems/tanhi/` | 1 | TANHI structural/activation reporting + telemetry transport | ⬜ | 0 |
 | `systems/telemetry/` | 1 | Blueprint, counts, estimates, execution/learning observability | ⬜ | 0 |
 | **Subtotal** | **5** | | **⬜** | **0 / 5** |
@@ -461,7 +461,7 @@ Tick **Inside node** (`1×1×1`) and **3D volumetric** separately. **Signed** = 
 | 4 | Tween | Tween | ✅ | ✅ | ✅ | 0.54 |
 | 5 | StepTween | Tween | ⬜ | ⬜ | ⬜ | |
 | 6 | MeshTween | Tween | ⬜ | ⬜ | ⬜ | |
-| 7 | TweenChain | TweenChain | ⬜ | ⬜ | ⬜ | |
+| 7 | TweenChain | TweenChain | ✅ | ✅ | ✅ | 0.55 |
 | 8 | StepTweenChain | TweenChain | ⬜ | ⬜ | ⬜ | |
 | 9 | MeshTweenChain | TweenChain | ⬜ | ⬜ | ⬜ | |
 | 10 | TweenSplit | TweenSplit | ⬜ | ⬜ | ⬜ | |
@@ -561,7 +561,7 @@ Per-layer evidence tables (leaf ×34, volume shapes, speed, wires): **[docs/TRAI
 | Engine/model handles (volume create/load/train/checkpoint) | ⬜ |
 | Dense forward / NormalBP wire magics (w2a) | 🚧 all leaf FormatNone fwd magics; NormalBP ⬜ |
 | All layer NormalBP magics (mirror welvet.cpp names) | ⬜ |
-| Volume / Step / Mesh magics + ModeTween TWB1/TWV1… | ✅ ModeTween |
+| Volume / Step / Mesh magics + ModeTween TWB1/TWV1… + ModeTweenChain TCB1/TCV1… | ✅ ModeTweenChain |
 | Go NAC dispatcher selects CUDA | ⬜ |
 
 Boundary rules match welvet.cpp: versioned descriptors, opaque handles, no C++ exceptions through C, explicit ownership, async inputs owned/copied, provenance in traces.

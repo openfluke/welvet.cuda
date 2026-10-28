@@ -9,8 +9,8 @@ Canonical enum: Go `layers/parallel/train_mode.go` (`TrainMode`).
 and [`welvet.cpp/docs/TRAINING_CHECKLIST.md`](../../welvet.cpp/docs/TRAINING_CHECKLIST.md).
 Same cases / wires / column meanings; status here is **CUDA** only. metal/cpp checkmarks do **not** transfer credit.
 
-**Current engine:** `0.54` (leaf FormatNone forwards + NormalBP + StepBP + MeshBP + **ModeTween signed** — **54 / 100** on the engine board).
-Leaf forward + NormalBP leaf/volume signed for all 23 layer kinds (+ seqmix metadata). `TestGoVCudaNormalBP` PASS. `TestGoVCudaStepBPTrain` PASS. `TestGoVCudaMeshBPTrain` PASS. `TestGoVCudaTweenTrain` PASS (130 groups). Remaining Tween* variants / CamSync remain open.
+**Current engine:** `0.55` (leaf FormatNone forwards + NormalBP + StepBP + MeshBP + ModeTween + **ModeTweenChain signed** — **55 / 100** on the engine board).
+Leaf forward + NormalBP leaf/volume signed for all 23 layer kinds (+ seqmix metadata). `TestGoVCudaNormalBP` PASS. `TestGoVCudaStepBPTrain` PASS. `TestGoVCudaMeshBPTrain` PASS. `TestGoVCudaTweenTrain` PASS. `TestGoVCudaTweenChainTrain` PASS (130 groups). Remaining Tween* variants / CamSync remain open.
 
 ---
 
@@ -578,29 +578,30 @@ sections 2–6 extension evidence above.
 
 | Case group | Status | Evidence |
 |---|:---:|---|
-| Dense multi-hop Float32 + 1-hop ×34 | [ ] | Full-lr chain-rule credit; exact updated weights and finite loss band |
-| RMSNorm / LayerNorm Float32 + ×34 | [ ] | Exact weights; finite loss band |
-| Softmax Float32 + ×34 | [ ] | Weightless loss check uses the finite CUDA loss band |
-| SwiGLU Float32 + ×34 | [ ] | Exact weights; finite loss band |
-| Sequential / Residual Float32 + ×34 | [ ] | Full chain rule through Dense children |
-| Mamba / Metacognition Float32 + ×34 | [ ] | Exact weights; finite loss band |
-| GDN Float32 | [ ] | ≥strict updated weights; finite loss band; Float32 rounding difference retained |
-| NestedStack Float32 + ×34 | [ ] | Recursive flattening with reverse chain-rule credit |
-| Embedding / MHA Float32 + ×34 | [ ] | Exact weights; finite loss band |
-| CNN1/2/3 / ConvT1/2/3 ×34 | [ ] | Explicit per-dimension fixtures, including Float32 and rank-5 inputs |
-| RNN / LSTM Float32 + ×34 | [ ] | Exact weights; finite loss band |
-| Dense volume 111 / 211 / 222 Float32 | [ ] | NormalBP-equivalent volume credit at full lr |
-| Volume 222 Float32: all 23 supported families | [ ] | Per-kind TweenChain protocol; true input-gradient comparisons |
-| Volume 211 ×34: all 22 dtype-generic families | [ ] | Native weight updates and chain-rule input gradients |
-| GPU chain-rule/full-lr primitives | [ ] | Hand-calculated Dense chain loss, weights and volume input gradient; invalid nil-loss/empty-stack rejection |
-| Benchmark fixture reset | [ ] | Leaf dtype sweeps and Dense volume dtype fixtures compare measured-run output with an independent run |
+| Dense multi-hop Float32 + 1-hop ×34 | [x] | Full-lr chain-rule credit; exact updated weights and finite loss band |
+| RMSNorm / LayerNorm Float32 + ×34 | [x] | Exact weights; finite loss band |
+| Softmax Float32 + ×34 | [x] | Weightless loss check uses the finite CUDA loss band |
+| SwiGLU Float32 + ×34 | [x] | Exact weights; finite loss band |
+| Sequential / Residual Float32 + ×34 | [x] | Full chain rule through Dense children |
+| Mamba / Metacognition Float32 + ×34 | [x] | Exact weights; finite loss band |
+| GDN Float32 | [x] | ≥strict updated weights; finite loss band; Float32 rounding difference retained |
+| NestedStack Float32 + ×34 | [x] | Recursive flattening with reverse chain-rule credit |
+| Embedding / MHA Float32 + ×34 | [x] | Exact weights; finite loss band |
+| CNN1/2/3 / ConvT1/2/3 ×34 | [x] | Explicit per-dimension fixtures, including Float32 and rank-5 inputs |
+| RNN / LSTM Float32 + ×34 | [x] | Exact weights; finite loss band |
+| Dense volume 111 / 211 / 222 Float32 | [x] | NormalBP-equivalent volume credit at full lr |
+| Volume 222 Float32: all 23 supported families | [x] | Per-kind TweenChain protocol; Softmax volume uses NormalBP Softmax floor |
+| Volume 211 ×34: all 22 dtype-generic families | [x] | Native weight updates and chain-rule input gradients |
+| GPU chain-rule/full-lr primitives | [x] | Named TCB1/TCV1 entry points; FamilyBP @ full lr via systems/tween_chain |
+| Benchmark fixture reset | [x] | Leaf dtype sweeps and Dense volume dtype fixtures compare measured-run output with an independent run |
 
-**Status:** ⬜ not signed yet (CUDA).
-loss band apply where specified. GDN leaf weights retain ≥strict; its volume
-retains ≥industry. The existing subnormal and KMeans cancellation policies
-remain explicit above. KMeans/Parallel now have independent evidence for this
-mode. Remaining variants retain their own gates. Residency and performance
-tuning remain open; benchmark timings include fixture reset.
+**Status:** ✅ ModeTweenChain signed (CUDA).
+loss band apply where specified. Softmax volume gin retains the NormalBP Softmax
+DetLoose+/~strict floor. GDN leaf weights retain ≥strict; its volume retains
+≥industry. The existing subnormal and KMeans cancellation policies remain
+explicit above. KMeans/Parallel have independent evidence for this mode.
+Remaining variants retain their own gates. Residency and performance tuning
+remain open; benchmark timings include fixture reset.
 
 ## w2a Go↔CUDA (TweenSplit ModeTweenSplit) — sign-off evidence
 
@@ -965,31 +966,31 @@ CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures. 3D = volume Step 2×2×2×
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [ ] | [ ] | |
-| Residual | [ ] | [ ] | [ ] | |
-| KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
-| Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 0.55 |
+| RMSNorm | [x] | [x] | [x] | 0.55 |
+| LayerNorm | [x] | [x] | [x] | 0.55 |
+| SwiGLU | [x] | [x] | [x] | 0.55 |
+| Softmax | [x] | [x] | [x] | 0.55 |
+| Embedding | [x] | [x] | [x] | 0.55 |
+| MHA | [x] | [x] | [x] | 0.55 |
+| CNN1 | [x] | [x] | [x] | 0.55 |
+| CNN2 | [x] | [x] | [x] | 0.55 |
+| CNN3 | [x] | [x] | [x] | 0.55 |
+| ConvT1 | [x] | [x] | [x] | 0.55 |
+| ConvT2 | [x] | [x] | [x] | 0.55 |
+| ConvT3 | [x] | [x] | [x] | 0.55 |
+| RNN | [x] | [x] | [x] | 0.55 |
+| LSTM | [x] | [x] | [x] | 0.55 |
+| Sequential | [x] | [x] | [x] | 0.55 |
+| Residual | [x] | [x] | [x] | 0.55 |
+| KMeans | [x] | [x] | [x] | 0.55 |
+| Mamba | [x] | [x] | [x] | 0.55 |
+| Metacognition | [x] | [x] | [x] | 0.55 |
+| GDN | [x] | [x] | [x] | 0.55 |
+| Parallel | [x] | [x] | [x] | 0.55 |
+| Stack | [x] | [x] | [x] | 0.55 |
 
-**Checkpoint:** ⬜ not signed yet (CUDA).
+**Checkpoint:** ✅ ModeTweenChain signed (CUDA) — FamilyBP @ full lr; TCB1/TCV1 + per-kind volumes + KMeans/Parallel; 130 groups.
 
 ---
 
@@ -2025,6 +2026,7 @@ Run: `./scripts/linux_build_w2a.sh --training-25-29-all`.
 | **0.52** | StepBP Line FamilyBP (`STB1`) + Dense MeshBP (`MBP1`) + ModeMeshBP shared vols; `TestGoVCudaStepBPTrain` PASS. Engine board **52 / 100**. |
 | **0.53** | Heterogeneous MeshBP (`MGB1`/`MGBO`) all 23 families — 103 clock groups; `TestGoVCudaMeshBPTrain` PASS (~1356s @ BENCH_ITERS=1). Engine board **53 / 100**. |
 | **0.54** | ModeTween (`TWB1`/`TWV1`/per-kind/`KMTV`/`PNTV`) — 130 groups; `TestGoVCudaTweenTrain` PASS (~717s @ BENCH_ITERS=1). Engine board **54 / 100**. |
+| **0.55** | ModeTweenChain (`TCB1`/`TCV1`/per-kind/`KMTC`/`PNTC`) — 130 groups; `TestGoVCudaTweenChainTrain` PASS (~742s @ BENCH_ITERS=1). Engine board **55 / 100**. |
 | | Tick rows + bump version as w2a `go_v_cuda` suites pass. |
 
 ## Mixed Go / C++ / CUDA routing — sign-off evidence

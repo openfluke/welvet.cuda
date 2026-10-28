@@ -94,6 +94,10 @@ const std::vector<Entry>& build() {
 
       // --- Systems / model ---
       {"systems.tween", "systems", "ModeTween projected credit CUDA", true},
+      {"systems.tween_chain", "systems",
+       "ModeTweenChain FamilyBP @ full lr; TCB1/TCBO + TCV1/TCVO + TRC1…MBTC", true},
+      {"runtime.tween_chain_train", "runtime",
+       "TrainStackMSE ModeTweenChain (FamilyBP @ full lr)", true},
       {"systems.dna", "systems", "gap? DNA", false},
       {"systems.evolution", "systems", "gap? evolution", false},
       {"systems.tanhi", "systems", "gap? TANHI", false},

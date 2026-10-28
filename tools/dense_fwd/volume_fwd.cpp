@@ -2,6 +2,7 @@
 
 #include "volume_fwd.hpp"
 #include "welvet/systems/tween.hpp"
+#include "welvet/systems/tween_chain.hpp"
 #include "welvet/runtime/tween_train.hpp"
 
 #include "welvet/architecture.hpp"
@@ -39,6 +40,13 @@
 #include <vector>
 
 namespace {
+
+const char* vol_out_magic(VolumeTrainMode mode, const char* nbp, const char* tween,
+                          const char* chain) {
+  if (mode == VolumeTrainMode::TweenChain) return chain;
+  if (mode == VolumeTrainMode::Tween) return tween;
+  return nbp;
+}
 
 bool read_exact(void* p, size_t n) { return std::fread(p, 1, n, stdin) == n; }
 template <typename T>
@@ -254,6 +262,9 @@ int run_volume_normalbp(int bench_iters, VolumeTrainMode mode) {
       bwd = {};
       return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     }
+    if (mode == VolumeTrainMode::TweenChain) {
+      return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
+    }
     return welvet::runtime::training::step_dense(g, fwd, target, lr, &loss, &bwd);
   };
 
@@ -288,9 +299,8 @@ int run_volume_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
   }
 
-  const bool tween = mode == VolumeTrainMode::Tween;
-  if (!write_exact(tween ? "TWVO" : "WVNO", 4) || !write_exact(&loss, 1)) return 2;
-  if (!tween) {
+  if (!write_exact(vol_out_magic(mode, "WVNO", "TWVO", "TCVO"), 4) || !write_exact(&loss, 1)) return 2;
+  if (mode == VolumeTrainMode::NormalBP) {
     const int32_t gin_n = static_cast<int32_t>(bwd.grad_in.data.size());
     if (!write_exact(&gin_n, 1) || !write_exact(bwd.grad_in.data.data(), bwd.grad_in.data.size())) {
       return 2;
@@ -314,7 +324,7 @@ int run_volume_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
     if (!write_exact(&o, 1) || !write_exact(&i, 1) || !write_exact(Wa.data(), Wa.size())) return 2;
   }
-  if (!tween) {
+  if (mode == VolumeTrainMode::NormalBP) {
     const int32_t out_n = static_cast<int32_t>(fwd.output.data.size());
     if (!write_exact(&out_n, 1) || !write_exact(fwd.output.data.data(), fwd.output.data.size())) {
       return 2;
@@ -517,6 +527,9 @@ int run_volume_rmsnorm_normalbp(int bench_iters, VolumeTrainMode mode) {
       bwd = {};
       return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     }
+    if (mode == VolumeTrainMode::TweenChain) {
+      return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
+    }
     return welvet::runtime::training::step_dense(g, fwd, target, lr, &loss, &bwd);
   };
 
@@ -549,7 +562,7 @@ int run_volume_rmsnorm_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
   }
 
-  if (!write_exact(mode == VolumeTrainMode::Tween ? "TRVO" : "WRVO", 4) || !write_exact(&loss, 1)) return 2;
+  if (!write_exact(vol_out_magic(mode, "WRVO", "TRVO", "TRCO"), 4) || !write_exact(&loss, 1)) return 2;
   const int32_t gin_n = static_cast<int32_t>(bwd.grad_in.data.size());
   if (!write_exact(&gin_n, 1) || !write_exact(bwd.grad_in.data.data(), bwd.grad_in.data.size())) {
     return 2;
@@ -778,6 +791,9 @@ int run_volume_layernorm_normalbp(int bench_iters, VolumeTrainMode mode) {
       bwd = {};
       return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     }
+    if (mode == VolumeTrainMode::TweenChain) {
+      return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
+    }
     return welvet::runtime::training::step_dense(g, fwd, target, lr, &loss, &bwd);
   };
 
@@ -810,7 +826,7 @@ int run_volume_layernorm_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
   }
 
-  if (!write_exact(mode == VolumeTrainMode::Tween ? "TLVO" : "WLVO", 4) || !write_exact(&loss, 1)) return 2;
+  if (!write_exact(vol_out_magic(mode, "WLVO", "TLVO", "TLCO"), 4) || !write_exact(&loss, 1)) return 2;
   const int32_t gin_n = static_cast<int32_t>(bwd.grad_in.data.size());
   if (!write_exact(&gin_n, 1) || !write_exact(bwd.grad_in.data.data(), bwd.grad_in.data.size())) {
     return 2;
@@ -1080,6 +1096,9 @@ int run_volume_softmax_normalbp(int bench_iters, VolumeTrainMode mode) {
       bwd = {};
       return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     }
+    if (mode == VolumeTrainMode::TweenChain) {
+      return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
+    }
     return welvet::runtime::training::step_dense(g, fwd, target, lr, &loss, &bwd);
   };
 
@@ -1112,7 +1131,7 @@ int run_volume_softmax_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
   }
 
-  if (!write_exact(mode == VolumeTrainMode::Tween ? "TXVO" : "WXVO", 4) || !write_exact(&loss, 1)) return 2;
+  if (!write_exact(vol_out_magic(mode, "WXVO", "TXVO", "TXCO"), 4) || !write_exact(&loss, 1)) return 2;
   const int32_t gin_n = static_cast<int32_t>(bwd.grad_in.data.size());
   if (!write_exact(&gin_n, 1) || !write_exact(bwd.grad_in.data.data(), bwd.grad_in.data.size())) {
     return 2;
@@ -1334,6 +1353,9 @@ int run_volume_swiglu_normalbp(int bench_iters, VolumeTrainMode mode) {
       bwd = {};
       return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     }
+    if (mode == VolumeTrainMode::TweenChain) {
+      return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
+    }
     return welvet::runtime::training::step_dense(g, fwd, target, lr, &loss, &bwd);
   };
 
@@ -1366,7 +1388,7 @@ int run_volume_swiglu_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
   }
 
-  if (!write_exact(mode == VolumeTrainMode::Tween ? "TSVO" : "WSVO", 4) || !write_exact(&loss, 1)) return 2;
+  if (!write_exact(vol_out_magic(mode, "WSVO", "TSVO", "TSCO"), 4) || !write_exact(&loss, 1)) return 2;
   const int32_t gin_n = static_cast<int32_t>(bwd.grad_in.data.size());
   if (!write_exact(&gin_n, 1) || !write_exact(bwd.grad_in.data.data(), bwd.grad_in.data.size())) {
     return 2;
@@ -1596,6 +1618,9 @@ int run_volume_embedding_normalbp(int bench_iters, VolumeTrainMode mode) {
       bwd = {};
       return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     }
+    if (mode == VolumeTrainMode::TweenChain) {
+      return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
+    }
     return welvet::runtime::training::step_dense(g, fwd, target, lr, &loss, &bwd);
   };
 
@@ -1628,7 +1653,7 @@ int run_volume_embedding_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
   }
 
-  if (!write_exact(mode == VolumeTrainMode::Tween ? "TEVO" : "WEVO", 4) || !write_exact(&loss, 1)) return 2;
+  if (!write_exact(vol_out_magic(mode, "WEVO", "TEVO", "TECO"), 4) || !write_exact(&loss, 1)) return 2;
   const int32_t gin_n = static_cast<int32_t>(bwd.grad_in.data.size());
   if (!write_exact(&gin_n, 1) || !write_exact(bwd.grad_in.data.data(), bwd.grad_in.data.size())) {
     return 2;
@@ -1899,6 +1924,9 @@ int run_volume_mha_normalbp(int bench_iters, VolumeTrainMode mode) {
       bwd = {};
       return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     }
+    if (mode == VolumeTrainMode::TweenChain) {
+      return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
+    }
     return welvet::runtime::training::step_dense(g, fwd, target, lr, &loss, &bwd);
   };
 
@@ -1931,7 +1959,7 @@ int run_volume_mha_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
   }
 
-  if (!write_exact(mode == VolumeTrainMode::Tween ? "THVO" : "WHVO", 4) || !write_exact(&loss, 1)) return 2;
+  if (!write_exact(vol_out_magic(mode, "WHVO", "THVO", "THCO"), 4) || !write_exact(&loss, 1)) return 2;
   const int32_t gin_n = static_cast<int32_t>(bwd.grad_in.data.size());
   if (!write_exact(&gin_n, 1) || !write_exact(bwd.grad_in.data.data(), bwd.grad_in.data.size())) {
     return 2;
@@ -2283,6 +2311,9 @@ int run_volume_cnn1_normalbp(int bench_iters, VolumeTrainMode mode) {
       bwd = {};
       return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     }
+    if (mode == VolumeTrainMode::TweenChain) {
+      return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
+    }
     return welvet::runtime::training::step_dense(g, fwd, target, lr, &loss, &bwd);
   };
 
@@ -2329,7 +2360,7 @@ int run_volume_cnn1_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
     Ws.push_back(std::move(Wa));
   }
-  return write_cnn_vol_nbp_out(mode == VolumeTrainMode::Tween ? "C1TO" : "C1VO", loss, bwd, fwd, Ws);
+  return write_cnn_vol_nbp_out(vol_out_magic(mode, "C1VO", "C1TO", "C1CO"), loss, bwd, fwd, Ws);
 }
 
 int run_volume_cnn2_normalbp(int bench_iters, VolumeTrainMode mode) {
@@ -2449,6 +2480,9 @@ int run_volume_cnn2_normalbp(int bench_iters, VolumeTrainMode mode) {
       bwd = {};
       return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     }
+    if (mode == VolumeTrainMode::TweenChain) {
+      return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
+    }
     return welvet::runtime::training::step_dense(g, fwd, target, lr, &loss, &bwd);
   };
 
@@ -2495,7 +2529,7 @@ int run_volume_cnn2_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
     Ws.push_back(std::move(Wa));
   }
-  return write_cnn_vol_nbp_out(mode == VolumeTrainMode::Tween ? "C2TO" : "C2VO", loss, bwd, fwd, Ws);
+  return write_cnn_vol_nbp_out(vol_out_magic(mode, "C2VO", "C2TO", "C2CO"), loss, bwd, fwd, Ws);
 }
 
 int run_volume_cnn3_normalbp(int bench_iters, VolumeTrainMode mode) {
@@ -2620,6 +2654,9 @@ int run_volume_cnn3_normalbp(int bench_iters, VolumeTrainMode mode) {
       bwd = {};
       return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     }
+    if (mode == VolumeTrainMode::TweenChain) {
+      return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
+    }
     return welvet::runtime::training::step_dense(g, fwd, target, lr, &loss, &bwd);
   };
 
@@ -2666,7 +2703,7 @@ int run_volume_cnn3_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
     Ws.push_back(std::move(Wa));
   }
-  return write_cnn_vol_nbp_out(mode == VolumeTrainMode::Tween ? "C3TO" : "C3VO", loss, bwd, fwd, Ws);
+  return write_cnn_vol_nbp_out(vol_out_magic(mode, "C3VO", "C3TO", "C3CO"), loss, bwd, fwd, Ws);
 }
 
 
@@ -2888,6 +2925,9 @@ int run_volume_convt1_normalbp(int bench_iters, VolumeTrainMode mode) {
       bwd = {};
       return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     }
+    if (mode == VolumeTrainMode::TweenChain) {
+      return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
+    }
     return welvet::runtime::training::step_dense(g, fwd, target, lr, &loss, &bwd);
   };
 
@@ -2934,7 +2974,7 @@ int run_volume_convt1_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
     Ws.push_back(std::move(Wa));
   }
-  return write_cnn_vol_nbp_out(mode == VolumeTrainMode::Tween ? "T1TO" : "T1VO", loss, bwd, fwd, Ws);
+  return write_cnn_vol_nbp_out(vol_out_magic(mode, "T1VO", "T1TO", "T1CO"), loss, bwd, fwd, Ws);
 }
 
 int run_volume_convt2_normalbp(int bench_iters, VolumeTrainMode mode) {
@@ -3050,6 +3090,9 @@ int run_volume_convt2_normalbp(int bench_iters, VolumeTrainMode mode) {
       bwd = {};
       return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     }
+    if (mode == VolumeTrainMode::TweenChain) {
+      return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
+    }
     return welvet::runtime::training::step_dense(g, fwd, target, lr, &loss, &bwd);
   };
 
@@ -3096,7 +3139,7 @@ int run_volume_convt2_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
     Ws.push_back(std::move(Wa));
   }
-  return write_cnn_vol_nbp_out(mode == VolumeTrainMode::Tween ? "T2TO" : "T2VO", loss, bwd, fwd, Ws);
+  return write_cnn_vol_nbp_out(vol_out_magic(mode, "T2VO", "T2TO", "T2CO"), loss, bwd, fwd, Ws);
 }
 
 int run_volume_convt3_normalbp(int bench_iters, VolumeTrainMode mode) {
@@ -3216,6 +3259,9 @@ int run_volume_convt3_normalbp(int bench_iters, VolumeTrainMode mode) {
       bwd = {};
       return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     }
+    if (mode == VolumeTrainMode::TweenChain) {
+      return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
+    }
     return welvet::runtime::training::step_dense(g, fwd, target, lr, &loss, &bwd);
   };
 
@@ -3262,7 +3308,7 @@ int run_volume_convt3_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
     Ws.push_back(std::move(Wa));
   }
-  return write_cnn_vol_nbp_out(mode == VolumeTrainMode::Tween ? "T3TO" : "T3VO", loss, bwd, fwd, Ws);
+  return write_cnn_vol_nbp_out(vol_out_magic(mode, "T3VO", "T3TO", "T3CO"), loss, bwd, fwd, Ws);
 }
 
 
@@ -3435,6 +3481,9 @@ int run_volume_rnn_normalbp(int bench_iters, VolumeTrainMode mode) {
       bwd = {};
       return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     }
+    if (mode == VolumeTrainMode::TweenChain) {
+      return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
+    }
     return welvet::runtime::training::step_dense(g, fwd, target, lr, &loss, &bwd);
   };
 
@@ -3481,7 +3530,7 @@ int run_volume_rnn_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
     Ws.push_back(std::move(Wa));
   }
-  return write_cnn_vol_nbp_out(mode == VolumeTrainMode::Tween ? "RNTO" : "RNVO", loss, bwd, fwd, Ws);
+  return write_cnn_vol_nbp_out(vol_out_magic(mode, "RNVO", "RNTO", "RNCO"), loss, bwd, fwd, Ws);
 }
 
 int run_volume_lstm_normalbp(int bench_iters, VolumeTrainMode mode) {
@@ -3585,6 +3634,9 @@ int run_volume_lstm_normalbp(int bench_iters, VolumeTrainMode mode) {
       bwd = {};
       return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     }
+    if (mode == VolumeTrainMode::TweenChain) {
+      return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
+    }
     return welvet::runtime::training::step_dense(g, fwd, target, lr, &loss, &bwd);
   };
 
@@ -3631,7 +3683,7 @@ int run_volume_lstm_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
     Ws.push_back(std::move(Wa));
   }
-  return write_cnn_vol_nbp_out(mode == VolumeTrainMode::Tween ? "LSTO" : "LSVO", loss, bwd, fwd, Ws);
+  return write_cnn_vol_nbp_out(vol_out_magic(mode, "LSVO", "LSTO", "LSCO"), loss, bwd, fwd, Ws);
 }
 
 // ---------------------------------------------------------------------------
@@ -3839,6 +3891,9 @@ int run_volume_sequential_normalbp(int bench_iters, VolumeTrainMode mode) {
       bwd = {};
       return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     }
+    if (mode == VolumeTrainMode::TweenChain) {
+      return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
+    }
     return welvet::runtime::training::step_dense(g, fwd, target, lr, &loss, &bwd);
   };
 
@@ -3885,7 +3940,7 @@ int run_volume_sequential_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
     Ws.push_back(std::move(Wa));
   }
-  return write_cnn_vol_nbp_out(mode == VolumeTrainMode::Tween ? "SQTO" : "SQVO", loss, bwd, fwd, Ws);
+  return write_cnn_vol_nbp_out(vol_out_magic(mode, "SQVO", "SQTO", "SQCO"), loss, bwd, fwd, Ws);
 }
 
 int run_volume_residual_normalbp(int bench_iters, VolumeTrainMode mode) {
@@ -3997,6 +4052,9 @@ int run_volume_residual_normalbp(int bench_iters, VolumeTrainMode mode) {
       bwd = {};
       return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     }
+    if (mode == VolumeTrainMode::TweenChain) {
+      return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
+    }
     return welvet::runtime::training::step_dense(g, fwd, target, lr, &loss, &bwd);
   };
 
@@ -4043,7 +4101,7 @@ int run_volume_residual_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
     Ws.push_back(std::move(Wa));
   }
-  return write_cnn_vol_nbp_out(mode == VolumeTrainMode::Tween ? "RETO" : "REVO", loss, bwd, fwd, Ws);
+  return write_cnn_vol_nbp_out(vol_out_magic(mode, "REVO", "RETO", "RECO"), loss, bwd, fwd, Ws);
 }
 
 namespace {
@@ -4173,6 +4231,9 @@ int run_volume_stack_normalbp(int bench_iters, VolumeTrainMode mode) {
       bwd = {};
       return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     }
+    if (mode == VolumeTrainMode::TweenChain) {
+      return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
+    }
     return welvet::runtime::training::step_dense(g, fwd, target, lr, &loss, &bwd);
   };
 
@@ -4219,7 +4280,7 @@ int run_volume_stack_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
     Ws.push_back(std::move(Wa));
   }
-  return write_cnn_vol_nbp_out(mode == VolumeTrainMode::Tween ? "SKTO" : "STVO", loss, bwd, fwd, Ws);
+  return write_cnn_vol_nbp_out(vol_out_magic(mode, "STVO", "SKTO", "SKCO"), loss, bwd, fwd, Ws);
 }
 
 // MBB1 — Mamba NormalBP leaf
@@ -4363,6 +4424,9 @@ int run_volume_mamba_normalbp(int bench_iters, VolumeTrainMode mode) {
       bwd = {};
       return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     }
+    if (mode == VolumeTrainMode::TweenChain) {
+      return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
+    }
     return welvet::runtime::training::step_dense(g, fwd, target, lr, &loss, &bwd);
   };
 
@@ -4409,7 +4473,7 @@ int run_volume_mamba_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
     Ws.push_back(std::move(Wa));
   }
-  return write_cnn_vol_nbp_out(mode == VolumeTrainMode::Tween ? "MBTO" : "MBVO", loss, bwd, fwd, Ws);
+  return write_cnn_vol_nbp_out(vol_out_magic(mode, "MBVO", "MBTO", "MBCO"), loss, bwd, fwd, Ws);
 }
 
 // ---------------------------------------------------------------------------
@@ -4552,6 +4616,9 @@ int run_volume_metacognition_normalbp(int bench_iters, VolumeTrainMode mode) {
       bwd = {};
       return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     }
+    if (mode == VolumeTrainMode::TweenChain) {
+      return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
+    }
     return welvet::runtime::training::step_dense(g, fwd, target, lr, &loss, &bwd);
   };
 
@@ -4598,7 +4665,7 @@ int run_volume_metacognition_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
     Ws.push_back(std::move(Wa));
   }
-  return write_cnn_vol_nbp_out(mode == VolumeTrainMode::Tween ? "MCTO" : "MCVO", loss, bwd, fwd, Ws);
+  return write_cnn_vol_nbp_out(vol_out_magic(mode, "MCVO", "MCTO", "MCCO"), loss, bwd, fwd, Ws);
 }
 
 // ---------------------------------------------------------------------------
@@ -4752,6 +4819,9 @@ int run_volume_kmeans_normalbp(int bench_iters, VolumeTrainMode mode) {
       bwd = {};
       return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     }
+    if (mode == VolumeTrainMode::TweenChain) {
+      return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
+    }
     return welvet::runtime::training::step_dense(g, fwd, target, lr, &loss, &bwd);
   };
 
@@ -4798,7 +4868,7 @@ int run_volume_kmeans_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
     Ws.push_back(std::move(Wa));
   }
-  return write_cnn_vol_nbp_out(mode == VolumeTrainMode::Tween ? "KMTO" : "KMVO", loss, bwd, fwd, Ws);
+  return write_cnn_vol_nbp_out(vol_out_magic(mode, "KMVO", "KMTO", "KMCO"), loss, bwd, fwd, Ws);
 }
 
 // ---------------------------------------------------------------------------
@@ -4963,6 +5033,9 @@ int run_volume_gdn_normalbp(int bench_iters, VolumeTrainMode mode) {
       bwd = {};
       return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     }
+    if (mode == VolumeTrainMode::TweenChain) {
+      return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
+    }
     return welvet::runtime::training::step_dense(g, fwd, target, lr, &loss, &bwd);
   };
 
@@ -5009,7 +5082,7 @@ int run_volume_gdn_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
     Ws.push_back(std::move(Wa));
   }
-  return write_cnn_vol_nbp_out(mode == VolumeTrainMode::Tween ? "GDTO" : "GDVO", loss, bwd, fwd, Ws);
+  return write_cnn_vol_nbp_out(vol_out_magic(mode, "GDVO", "GDTO", "GDCO"), loss, bwd, fwd, Ws);
 }
 
 // ---------------------------------------------------------------------------
@@ -5289,6 +5362,9 @@ int run_volume_parallel_normalbp(int bench_iters, VolumeTrainMode mode) {
       bwd = {};
       return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     }
+    if (mode == VolumeTrainMode::TweenChain) {
+      return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
+    }
     return welvet::runtime::training::step_dense(g, fwd, target, lr, &loss, &bwd);
   };
   if (bench_iters > 0) {
@@ -5332,7 +5408,7 @@ int run_volume_parallel_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
     Ws.push_back(std::move(Wa));
   }
-  return write_cnn_vol_nbp_out(mode == VolumeTrainMode::Tween ? "PNTO" : "PNVO", loss, bwd, fwd, Ws);
+  return write_cnn_vol_nbp_out(vol_out_magic(mode, "PNVO", "PNTO", "PNCO"), loss, bwd, fwd, Ws);
 }
 
 int run_parallel_poly_train(int bench_iters) {
