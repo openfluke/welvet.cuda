@@ -142,6 +142,8 @@ const std::vector<Entry>& build() {
        "MeshTweenAlt last-tick Split→Tween@lr×0.5 (MGA1/MGAO)", true},
       {"runtime.step.meshtweensplit_fast_proxy", "runtime",
        "MeshTweenSplitFastProxy last-tick FastProxy (MGF1/MGFO)", true},
+      {"runtime.step.meshtweensplit_sparse", "runtime",
+       "MeshTweenSplitSparse last-tick Sparse rotate (MGQ1/MGQO)", true},
       {"systems.dna", "systems", "gap? DNA", false},
       {"systems.evolution", "systems", "gap? evolution", false},
       {"systems.tanhi", "systems", "gap? TANHI", false},

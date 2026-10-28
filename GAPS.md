@@ -3,7 +3,7 @@
 **Authoritative checklist:** [README.md](README.md).  
 **Training detail:** [docs/TRAINING_CHECKLIST.md](docs/TRAINING_CHECKLIST.md).
 
-**Version `0.72`** — engine board **72 / 100**. Dump: `welvet_dense_fwd --gaps`.
+**Version `0.73`** — engine board **73 / 100**. Dump: `welvet_dense_fwd --gaps`.
 
 ```bash
 ./scripts/build_linux.sh
@@ -55,9 +55,10 @@
 | **MeshTweenSplit** | MGS1/MGSO FamilyTweenSplit 1/N @ full lr — 154 groups — `TestGoVCudaMeshSplitModes` PASS |
 | **MeshTweenAlt** | MGA1/MGAO Split→Tween@lr×0.5 — 154 groups — `TestGoVCudaMeshSplitModes` PASS |
 | **MeshTweenSplitFastProxy** | MGF1/MGFO last-tick FastProxy — 172 groups — `TestGoVCudaMeshSplitModes` PASS |
+| **MeshTweenSplitSparse** | MGQ1/MGQO last-tick Sparse rotate — 172 groups — `TestGoVCudaMeshSplitModes` PASS |
 
 ## Open
 
-Remaining Tween* (Mesh Sparse + Step proxy…) / CamSync / Freeze/Shadow / other systems / model / lucy / peak fused / NAC / Windows / packed quants. See README.
+Remaining Tween* (Step proxy…) / CamSync / Freeze/Shadow / other systems / model / lucy / peak fused / NAC / Windows / packed quants. See README.
 
 Live counters: `./build/welvet_dense_fwd --gaps`.

@@ -62,7 +62,7 @@
 //   MGS1 — Heterogeneous mesh-clock MeshTweenSplit FamilyTweenSplit → MGSO
 //   MGA1 — Heterogeneous mesh-clock MeshTweenAlt FamilyTweenAlt → MGAO
 //   MGF1 — Heterogeneous mesh-clock MeshTweenSplitFastProxy → MGFO
-//   MGQ1 — MeshTweenSplitSparse (later)
+//   MGQ1 — Heterogeneous mesh-clock MeshTweenSplitSparse → MGQO
 //   GPB1 — TweenSplit proxy leaf (variant 1–6) → GPBO; --bench → WVB1
 //   PGB1 — TweenSplit proxy volume (variant 1–6) → PGVO; --bench → WVB1
 //   MBB1/MBV1 Mamba; MCB1/MCV1 Meta; GDB1/GDV1 GDN; KMB1/KMV1 KMeans;
