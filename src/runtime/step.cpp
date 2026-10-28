@@ -323,10 +323,6 @@ Status apply_credit(architecture::Grid& g, const State& s, const TensorF32& grad
                     Credit credit) {
   if (int(credit) < 1 || int(credit) > int(Credit::FamilyTweenSplitSparse))
     return Status::Gap("step: unsupported local credit");
-  if (credit == Credit::FamilyTweenSplitFastProxy || credit == Credit::FamilyTweenSplitSparse)
-    return Status::Gap(std::string("runtime.step Credit ") +
-                       std::to_string(static_cast<int>(credit)) +
-                       " (mesh proxy/sparse local credit not wired on CUDA)");
   if (s.history_in.empty() || s.history_pre.empty() ||
       s.history_in.back().size() != g.cells.size() ||
       s.history_pre.back().size() != g.cells.size() || s.layer_data.size() != g.cells.size())
@@ -348,6 +344,12 @@ Status apply_credit(architecture::Grid& g, const State& s, const TensorF32& grad
       rc = systems::tween_split::apply_cell_split(cell, gap, cin, pre, post, lr);
     else if (credit == Credit::FamilyTweenAlt)
       rc = systems::tween_alt::apply_cell_alt(cell, gap, cin, pre, post, lr);
+    else if (credit == Credit::FamilyTweenSplitFastProxy)
+      rc = systems::tween_split::apply_cell_variant(cell, gap, cin, pre, post, lr,
+                                                   systems::tween_split::Variant::FastProxy);
+    else if (credit == Credit::FamilyTweenSplitSparse)
+      rc = systems::tween_split::apply_cell_variant(cell, gap, cin, pre, post, lr,
+                                                   systems::tween_split::Variant::Sparse);
     else
       rc = systems::tween::apply_cell_projected(cell, gap, cin, pre, post, lr * 0.5);
     if (!rc) return rc;

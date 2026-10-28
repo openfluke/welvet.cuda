@@ -59,6 +59,8 @@
 //   MGB1 — Heterogeneous mesh-clock MeshBP → MGBO; --bench → WVB1
 //   MGW1 — Heterogeneous mesh-clock MeshTween → MGWO; --bench → WVB1
 //   MGC1 — Heterogeneous mesh-clock MeshTweenChain → MGCO; --bench → WVB1
+//   MGS1 — Heterogeneous mesh-clock MeshTweenSplit FamilyTweenSplit → MGSO
+//   MGA1/MGF1/MGQ1 — MeshTweenAlt / FastProxy / Sparse (later)
 //   GPB1 — TweenSplit proxy leaf (variant 1–6) → GPBO; --bench → WVB1
 //   PGB1 — TweenSplit proxy volume (variant 1–6) → PGVO; --bench → WVB1
 //   MBB1/MBV1 Mamba; MCB1/MCV1 Meta; GDB1/GDV1 GDN; KMB1/KMV1 KMeans;
@@ -1432,6 +1434,15 @@ int main(int argc, char** argv) {
   if (std::memcmp(magic, "MBP1", 4) == 0) return run_meshbp(bench_iters);
   if (std::memcmp(magic, "MTW1", 4) == 0) return run_meshtween(bench_iters);
   if (std::memcmp(magic, "MTC1", 4) == 0) return run_meshtweenchain(bench_iters);
+  // mesh_family: FamilyTweenSplit=2, FamilyTweenAlt=3, FastProxy=4, Sparse=5
+  if (std::memcmp(magic, "MGS1", 4) == 0)
+    return run_mesh_generic_bp(bench_iters, false, "MGSO", 0, 2);
+  if (std::memcmp(magic, "MGA1", 4) == 0)
+    return run_mesh_generic_bp(bench_iters, false, "MGAO", 0, 3);
+  if (std::memcmp(magic, "MGF1", 4) == 0)
+    return run_mesh_generic_bp(bench_iters, false, "MGFO", 0, 4);
+  if (std::memcmp(magic, "MGQ1", 4) == 0)
+    return run_mesh_generic_bp(bench_iters, false, "MGQO", 0, 5);
   if (std::memcmp(magic, "MGB1", 4) == 0) return run_mesh_generic_bp(bench_iters);
   if (std::memcmp(magic, "MGW1", 4) == 0) return run_mesh_generic_bp(bench_iters, true);
   if (std::memcmp(magic, "MGC1", 4) == 0) return run_mesh_generic_bp(bench_iters, false, "MGCO");

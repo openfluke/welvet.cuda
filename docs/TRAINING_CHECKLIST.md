@@ -9,8 +9,8 @@ Canonical enum: Go `layers/parallel/train_mode.go` (`TrainMode`).
 and [`welvet.cpp/docs/TRAINING_CHECKLIST.md`](../../welvet.cpp/docs/TRAINING_CHECKLIST.md).
 Same cases / wires / column meanings; status here is **CUDA** only. metal/cpp checkmarks do **not** transfer credit.
 
-**Current engine:** `0.69` (… + HeadProxyAsync + **ModeTweenSplitSparse signed** — **69 / 100** on the engine board).
-Prior mode suites PASS. ProxyTrain/ProxyVolume PASS through Sparse (65 leaf + 69 volume, 4-epoch rotate). Remaining Tween* Mesh/Step proxy / CamSync remain open.
+**Current engine:** `0.70` (… + Sparse + **MeshTweenSplit signed** — **70 / 100** on the engine board).
+Prior mode suites PASS. MeshTweenSplit 154 groups (MGS1/MGSO). Remaining Tween* Mesh Alt/FastProxy/Sparse + Step proxy / CamSync remain open.
 
 ---
 
@@ -1613,31 +1613,31 @@ Wires: `MGS1`/`MGSO`. `TestGoVCudaMeshSplitModes` covers 103 clock groups per mo
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [ ] | [ ] | |
-| Residual | [ ] | [ ] | [ ] | |
-| KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
-| Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 0.70 |
+| RMSNorm | [x] | [x] | [x] | 0.70 |
+| LayerNorm | [x] | [x] | [x] | 0.70 |
+| SwiGLU | [x] | [x] | [x] | 0.70 |
+| Softmax | [x] | [x] | [x] | 0.70 |
+| Embedding | [x] | [x] | [x] | 0.70 |
+| MHA | [x] | [x] | [x] | 0.70 |
+| CNN1 | [x] | [x] | [x] | 0.70 |
+| CNN2 | [x] | [x] | [x] | 0.70 |
+| CNN3 | [x] | [x] | [x] | 0.70 |
+| ConvT1 | [x] | [x] | [x] | 0.70 |
+| ConvT2 | [x] | [x] | [x] | 0.70 |
+| ConvT3 | [x] | [x] | [x] | 0.70 |
+| RNN | [x] | [x] | [x] | 0.70 |
+| LSTM | [x] | [x] | [x] | 0.70 |
+| Sequential | [x] | [x] | [x] | 0.70 |
+| Residual | [x] | [x] | [x] | 0.70 |
+| KMeans | [x] | [x] | [x] | 0.70 |
+| Mamba | [x] | [x] | [x] | 0.70 |
+| Metacognition | [x] | [x] | [x] | 0.70 |
+| GDN | [x] | [x] | [x] | 0.70 |
+| Parallel | [x] | [x] | [x] | 0.70 |
+| Stack | [x] | [x] | [x] | 0.70 |
 
-**Checkpoint:** ⬜ not signed yet (CUDA).
+**Checkpoint:** Passed all 23 actual node kinds, supported native dtypes (GDN Float32), shared TweenSplit volumes and exact repeated replay. **154 groups** in ~1541s. Numerical work runs in CUDA; graph residency and performance tuning remain open.
 
 ---
 
@@ -2010,6 +2010,7 @@ Run: `./scripts/linux_build_w2a.sh --training-25-29-all`.
 | **0.67** | ModeTweenSplitLinearCache (`GPB1`/`GPBO` + `PGB1`/`PGVO` variant 4; refresh every 20) — 88 leaf + 92 volume; PASS (~563s / ~747s @ BENCH_ITERS=1). Engine board **67 / 100**. |
 | **0.68** | ModeTweenSplitHeadProxyAsync (`GPB1`/`GPBO` + `PGB1`/`PGVO` variant 5; stale Wᵀgy then post-update store) — 65 leaf + 69 volume; PASS (~559s / ~731s @ BENCH_ITERS=1). Engine board **68 / 100**. |
 | **0.69** | ModeTweenSplitSparse (`GPB1`/`GPBO` + `PGB1`/`PGVO` variant 6; pre-update proxy + rotate one hidden) — 65 leaf + 69 volume; PASS (~547s / ~730s @ BENCH_ITERS=1). Engine board **69 / 100**. |
+| **0.70** | MeshTweenSplit (`MGS1`/`MGSO` FamilyTweenSplit 1/N @ full lr) — 154 groups; `TestGoVCudaMeshSplitModes` PASS (~1541s @ BENCH_ITERS=1). Engine board **70 / 100**. |
 | | Tick rows + bump version as w2a `go_v_cuda` suites pass. |
 
 ## Mixed Go / C++ / CUDA routing — sign-off evidence
