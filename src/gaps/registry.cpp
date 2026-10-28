@@ -108,6 +108,8 @@ const std::vector<Entry>& build() {
        "ModeTweenAlt Split@lr → Tween@lr×0.5; TAB1/TAV1 + TRA1…KMAL/PNAL", true},
       {"runtime.tween_alt_train", "runtime",
        "TrainStackMSE ModeTweenAlt (AltTimes × Split then Tween soft lr)", true},
+      {"runtime.line.family_tween_alt", "runtime",
+       "Line FamilyTweenAlt on pop (STA1/STAO; apply_alt_child Split→Tween frozen gap)", true},
       {"systems.dna", "systems", "gap? DNA", false},
       {"systems.evolution", "systems", "gap? evolution", false},
       {"systems.tanhi", "systems", "gap? TANHI", false},

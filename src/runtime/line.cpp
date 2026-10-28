@@ -1,6 +1,7 @@
 #include "welvet/runtime/line.hpp"
 
 #include "welvet/runtime/training.hpp"
+#include "welvet/systems/tween_alt.hpp"
 #include "welvet/systems/tween_split.hpp"
 
 #include <string>
@@ -39,7 +40,8 @@ Status tick(stack::Layer& ops, State* st, const TensorF32& input, const TensorF3
 
   if (static_cast<int>(credit) > static_cast<int>(Credit::FamilyTweenSplitSparse))
     return gap_credit(credit);
-  if (credit != Credit::FamilyBP && credit != Credit::FamilyTweenSplit)
+  if (credit != Credit::FamilyBP && credit != Credit::FamilyTweenSplit &&
+      credit != Credit::FamilyTweenAlt)
     return gap_credit(credit);
 
   std::vector<stack::Child*> flat;
@@ -117,14 +119,23 @@ Status tick(stack::Layer& ops, State* st, const TensorF32& input, const TensorF3
     out->popped_train = true;
 
     TensorF32 g = std::move(gy);
-    if (credit == Credit::FamilyTweenSplit) {
-      // Go trainTweenSplitFamily @ full lr; gin = copy gy if same len else zeros.
+    if (credit == Credit::FamilyTweenSplit || credit == Credit::FamilyTweenAlt) {
+      // Split: 1/N @ full lr. Alt: Split→Tween soft lr (frozen popped gap).
+      // gin = copy gy if same len else zeros (no chain rule).
       for (int j = n - 1; j >= 0; --j) {
-        if (auto st_t = systems::tween_split::apply_split_child(
-                *flat[static_cast<std::size_t>(j)], g, fl.ins[static_cast<std::size_t>(j)], lr);
-            !st_t) {
-          return Status::Err(st_t.code, std::string("line split layer ") + std::to_string(j) +
-                                            ": " + st_t.message);
+        Status st_t;
+        if (credit == Credit::FamilyTweenAlt) {
+          st_t = systems::tween_alt::apply_alt_child(
+              *flat[static_cast<std::size_t>(j)], g, fl.ins[static_cast<std::size_t>(j)], lr, 1);
+        } else {
+          st_t = systems::tween_split::apply_split_child(
+              *flat[static_cast<std::size_t>(j)], g, fl.ins[static_cast<std::size_t>(j)], lr);
+        }
+        if (!st_t) {
+          return Status::Err(st_t.code,
+                             std::string(credit == Credit::FamilyTweenAlt ? "line alt layer "
+                                                                         : "line split layer ") +
+                                 std::to_string(j) + ": " + st_t.message);
         }
         TensorF32 next;
         next.shape = fl.ins[static_cast<std::size_t>(j)].shape;
