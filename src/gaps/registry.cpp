@@ -138,6 +138,8 @@ const std::vector<Entry>& build() {
        "MeshTweenChain ≡ MeshBP FamilyBP alias (MTC1/MTCO, MGC1/MGCO)", true},
       {"runtime.step.meshtweensplit", "runtime",
        "MeshTweenSplit last-tick FamilyTweenSplit 1/N @ full lr (MGS1/MGSO)", true},
+      {"runtime.step.meshtweenalt", "runtime",
+       "MeshTweenAlt last-tick Split→Tween@lr×0.5 (MGA1/MGAO)", true},
       {"systems.dna", "systems", "gap? DNA", false},
       {"systems.evolution", "systems", "gap? evolution", false},
       {"systems.tanhi", "systems", "gap? TANHI", false},

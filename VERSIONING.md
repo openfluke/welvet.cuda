@@ -28,6 +28,7 @@
 | **0.68** | ModeTweenSplitHeadProxyAsync (`TestGoVCudaProxyTrain` 65 + `TestGoVCudaProxyVolumeTrain` 69) |
 | **0.69** | ModeTweenSplitSparse (`TestGoVCudaProxyTrain` 65 + `TestGoVCudaProxyVolumeTrain` 69) |
 | **0.70** | MeshTweenSplit (`TestGoVCudaMeshSplitModes` 154; MGS1/MGSO FamilyTweenSplit @ full lr) |
+| **0.71** | MeshTweenAlt (`TestGoVCudaMeshSplitModes` 154; MGA1/MGAO Split→Tween@lr×0.5) |
 | **0.x** | `round(earned)` from the engine table in [README.md](README.md) |
 | **1.0.0** | Engine board **100/100** — full Go parity on NVIDIA GPU (FormatNone path + Model/IO + Systems + CamSync + peak fused, or explicit gate rewrite) |
 
