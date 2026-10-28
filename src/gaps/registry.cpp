@@ -102,6 +102,8 @@ const std::vector<Entry>& build() {
        "ModeTweenSplit 1/N projected gap @ full lr; TSB1/TSP1 + TRP1…", true},
       {"runtime.tween_split_train", "runtime",
        "TrainStackMSE ModeTweenSplit (OpenSplitTape 1/N)", true},
+      {"runtime.line.family_tween", "runtime",
+       "Line FamilyTween on pop (STW1/STWO; apply_projected @ lr×0.5)", true},
       {"runtime.line.family_tween_split", "runtime",
        "Line FamilyTweenSplit on pop (STS1/STSO; apply_split_child 1/N @ full lr)", true},
       {"systems.tween_alt", "systems",
