@@ -6,6 +6,13 @@ enum class VolumeTrainMode {
   TweenChain = 2,
   TweenSplit = 3,
   TweenAlt = 4,
+  // GPB1 variants: main passes 4+variant (HeadProxy=1 → ProxyHead=5).
+  ProxyHead = 5,
+  ProxyLinear = 6,
+  ProxyFast = 7,
+  ProxyCache = 8,
+  ProxyAsync = 9,
+  ProxySparse = 10,
 };
 
 // Dense NormalBP leaf (WDB1) + volume (WVN1) wires for welvet_dense_fwd.

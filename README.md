@@ -8,8 +8,8 @@ It will run directly from C++ and through a stable C ABI. Go Welvet can later de
 
 | | |
 |--|--|
-| **Version** | **`0.63`** |
-| **Engine board** | **63 / 100** (same 10 categories as Go Welvet) |
+| **Version** | **`0.64`** |
+| **Engine board** | **64 / 100** (same 10 categories as Go Welvet) |
 | **Compute** | NVIDIA GPU (CUDA) — primary · CPU / Metal / QNN siblings remain separate repos — never implied |
 | **Parity reference** | [welvet](https://github.com/openfluke/welvet) Go **v1.2.0** (100/100) |
 | **CPU sibling** | [welvet.cpp](https://github.com/openfluke/welvet.cpp) **0.67** (semantics/wire to mirror — **score not inherited**) |
@@ -22,7 +22,7 @@ It will run directly from C++ and through a stable C ABI. Go Welvet can later de
 ```bash
 ./scripts/build_linux.sh
 ./build/example_cuda_smoke
-./build/welvet_dense_fwd --version   # 0.63
+./build/welvet_dense_fwd --version   # 0.64
 ./build/welvet_dense_fwd --identity
 ./build/welvet_dense_fwd --gaps
 ./scripts/linux_build_w2a.sh --leaf-fwd-all
@@ -36,6 +36,7 @@ It will run directly from C++ and through a stable C ABI. Go Welvet can later de
 ./scripts/linux_build_w2a.sh --meshtweenchain-train
 ./scripts/linux_build_w2a.sh --steptween-train
 ./scripts/linux_build_w2a.sh --steptweenchain-train
+./scripts/linux_build_w2a.sh --proxy-train
 ```
 
 | Slice | Status |
@@ -46,6 +47,7 @@ It will run directly from C++ and through a stable C ABI. Go Welvet can later de
 | StepBP Line + Dense MeshBP | ✅ `TestGoVCudaStepBPTrain` |
 | Heterogeneous MeshBP (MGB1) | ✅ `TestGoVCudaMeshBPTrain` (103) |
 | ModeTween / ModeTweenChain / ModeTweenSplit / ModeStepTweenSplit / ModeTweenAlt / ModeStepTweenAlt / MeshTween / MeshTweenChain / StepTween / StepTweenChain | ✅ 130 / 130 / 131 / 130 / 130 / 130 / 159 / 160 / 130 / 130 |
+| ModeTweenSplitHeadProxy | ✅ `TestGoVCudaProxyTrain` 65 + `ProxyVolumeTrain` 69 |
 | Remaining Tween* / CamSync / other systems / model | ⬜ |
 
 ---
@@ -192,12 +194,12 @@ Identical ten categories / weights as Go Welvet. Credit only from **this** CUDA 
 | 3 | **Transformer stack** — MHA, SwiGLU, norms, Softmax, Emb, Sequential, Residual, seqmix | 14 | leaf FormatNone + NormalBP leaf/vol signed | ✅ | **14** |
 | 4 | **CNN / RNN / LSTM** | 6 | CNN1–3 + RNN + LSTM leaf fwd + NormalBP | ✅ | **6** |
 | 5 | **Extended layers** — GDN, ConvT1–3, Mamba, KMeans, Parallel, Metacognition | 7 | leaf fwd + NormalBP (incl. Stack); seqmix metadata | ✅ | **7** |
-| 6 | **Runtime + architecture** — volumetric grid, forward, backward, training, step/mesh | 8 | Volume NormalBP + StepBP/StepTween/StepTweenChain Line + heterogeneous MeshBP | 🚧 | **6** |
-| 7 | **Systems** — dna, evolution, tween, tanhi, telemetry | 5 | systems/tween + tween_chain + tween_split + tween_alt | 🚧 | **1** |
+| 6 | **Runtime + architecture** — volumetric grid, forward, backward, training, step/mesh | 8 | Volume NormalBP + StepBP/StepTween/StepTweenChain Line + heterogeneous MeshBP + HeadProxy volume | 🚧 | **7** |
+| 7 | **Systems** — dna, evolution, tween, tanhi, telemetry | 5 | systems/tween + tween_chain + tween_split (+ HeadProxy) + tween_alt | 🚧 | **1** |
 | 8 | **Model / IO** — tokenizer, entity, transformer, sampling, hf | 8 | — | ⬜ | **0** |
-| 9 | **Training credit** — 29 modes + cameral BranchModes / CamSync | 8 | NormalBP + StepBP + MeshBP + ModeTween + ModeTweenChain + ModeTweenSplit + ModeStepTweenSplit + ModeTweenAlt + ModeStepTweenAlt + MeshTween + MeshTweenChain + ModeStepTween + ModeStepTweenChain; remaining Tween* open | 🚧 | **8** |
+| 9 | **Training credit** — 29 modes + cameral BranchModes / CamSync | 8 | NormalBP + StepBP + MeshBP + ModeTween + ModeTweenChain + ModeTweenSplit + ModeStepTweenSplit + ModeTweenAlt + ModeStepTweenAlt + MeshTween + MeshTweenChain + ModeStepTween + ModeStepTweenChain + ModeTweenSplitHeadProxy; remaining Tween* open | 🚧 | **8** |
 | 10 | **Peak fused / no host ALU** — fused CUDA kernels, decoder fuse, provenance | 14 | — | ⬜ | **0** |
-| | **Total → version** | **100** | | **🚧** | **63 / 100 → `0.63`** |
+| | **Total → version** | **100** | | **🚧** | **64 / 100 → `0.64`** |
 
 **Path to 1.0:** same order Go used / welvet.cpp is following — Dense FormatNone + NormalBP → layers → Step/Mesh/Tween* → Systems + Model/IO → CamSync + peak fused CUDA. welvet.cpp’s ✅ list is the **port order**, not transferred credit.
 
@@ -478,7 +480,7 @@ Tick **Inside node** (`1×1×1`) and **3D volumetric** separately. **Signed** = 
 | 13 | TweenAlt | TweenAlt | ✅ | ✅ | ✅ | 0.58 |
 | 14 | StepTweenAlt | TweenAlt | ✅ | ✅ | ✅ | 0.59 |
 | 15 | MeshTweenAlt | TweenAlt | ⬜ | ⬜ | ⬜ | |
-| 16 | TweenSplitHeadProxy | TweenSplit | ⬜ | ⬜ | ⬜ | |
+| 16 | TweenSplitHeadProxy | TweenSplit | ✅ | ✅ | ✅ | 0.64 |
 | 17 | TweenSplitLinear | TweenSplit | ⬜ | ⬜ | ⬜ | |
 | 18 | TweenSplitFastProxy | TweenSplit | ⬜ | ⬜ | ⬜ | |
 | 19 | TweenSplitLinearCache | TweenSplit | ⬜ | ⬜ | ⬜ | |

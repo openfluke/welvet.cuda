@@ -172,4 +172,5 @@ case "$MODE" in
   meshtweenchain-train) run_go_test '^(TestGoVCudaMeshTweenChainTrain|TestGoVCudaMeshTweenTrain|TestGoVCudaTweenChainTrain)$' ;;
   steptween-train) run_go_test '^(TestGoVCudaStepTweenTrain|TestGoVCudaTweenTrain)$' ;;
   steptweenchain-train) run_go_test '^(TestGoVCudaStepTweenChainTrain|TestGoVCudaTweenChainTrain)$' ;;
+  proxy-train) run_go_test '^(TestGoVCudaProxyTrain|TestGoVCudaProxyVolumeTrain)$' ;;
 esac

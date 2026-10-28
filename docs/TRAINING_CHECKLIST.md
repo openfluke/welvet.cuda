@@ -9,8 +9,8 @@ Canonical enum: Go `layers/parallel/train_mode.go` (`TrainMode`).
 and [`welvet.cpp/docs/TRAINING_CHECKLIST.md`](../../welvet.cpp/docs/TRAINING_CHECKLIST.md).
 Same cases / wires / column meanings; status here is **CUDA** only. metal/cpp checkmarks do **not** transfer credit.
 
-**Current engine:** `0.63` (leaf FormatNone forwards + NormalBP + StepBP + MeshBP + ModeTween + ModeTweenChain + ModeTweenSplit + ModeStepTweenSplit + ModeTweenAlt + ModeStepTweenAlt + MeshTween + MeshTweenChain + ModeStepTween + **ModeStepTweenChain signed** — **63 / 100** on the engine board).
-Leaf forward + NormalBP leaf/volume signed for all 23 layer kinds (+ seqmix metadata). `TestGoVCudaNormalBP` PASS. `TestGoVCudaStepBPTrain` PASS. `TestGoVCudaMeshBPTrain` PASS. `TestGoVCudaTweenTrain` PASS. `TestGoVCudaTweenChainTrain` PASS. `TestGoVCudaTweenSplitTrain` PASS. `TestGoVCudaStepTweenSplitTrain` PASS. `TestGoVCudaTweenAltTrain` PASS. `TestGoVCudaStepTweenAltTrain` PASS. `TestGoVCudaMeshTweenTrain` PASS (159). `TestGoVCudaMeshTweenChainTrain` PASS (160). `TestGoVCudaStepTweenTrain` PASS (130). `TestGoVCudaStepTweenChainTrain` PASS (130). Remaining Tween* variants / CamSync remain open.
+**Current engine:** `0.64` (leaf FormatNone forwards + NormalBP + StepBP + MeshBP + ModeTween + ModeTweenChain + ModeTweenSplit + ModeStepTweenSplit + ModeTweenAlt + ModeStepTweenAlt + MeshTween + MeshTweenChain + ModeStepTween + ModeStepTweenChain + **ModeTweenSplitHeadProxy signed** — **64 / 100** on the engine board).
+Leaf forward + NormalBP leaf/volume signed for all 23 layer kinds (+ seqmix metadata). `TestGoVCudaNormalBP` PASS. `TestGoVCudaStepBPTrain` PASS. `TestGoVCudaMeshBPTrain` PASS. `TestGoVCudaTweenTrain` PASS. `TestGoVCudaTweenChainTrain` PASS. `TestGoVCudaTweenSplitTrain` PASS. `TestGoVCudaStepTweenSplitTrain` PASS. `TestGoVCudaTweenAltTrain` PASS. `TestGoVCudaStepTweenAltTrain` PASS. `TestGoVCudaMeshTweenTrain` PASS (159). `TestGoVCudaMeshTweenChainTrain` PASS (160). `TestGoVCudaStepTweenTrain` PASS (130). `TestGoVCudaStepTweenChainTrain` PASS (130). `TestGoVCudaProxyTrain` PASS (65). `TestGoVCudaProxyVolumeTrain` PASS (69). Remaining Tween* variants / CamSync remain open.
 
 ---
 
@@ -1397,31 +1397,31 @@ Wires: `GPB1`/`GPBO` (variant 1); `PGB1`/`PGVO` for actual-type volumes. Tests: 
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [ ] | [ ] | |
-| Residual | [ ] | [ ] | [ ] | |
-| KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
-| Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 0.64 |
+| RMSNorm | [x] | [x] | [x] | 0.64 |
+| LayerNorm | [x] | [x] | [x] | 0.64 |
+| SwiGLU | [x] | [x] | [x] | 0.64 |
+| Softmax | [x] | [x] | [x] | 0.64 |
+| Embedding | [x] | [x] | [x] | 0.64 |
+| MHA | [x] | [x] | [x] | 0.64 |
+| CNN1 | [x] | [x] | [x] | 0.64 |
+| CNN2 | [x] | [x] | [x] | 0.64 |
+| CNN3 | [x] | [x] | [x] | 0.64 |
+| ConvT1 | [x] | [x] | [x] | 0.64 |
+| ConvT2 | [x] | [x] | [x] | 0.64 |
+| ConvT3 | [x] | [x] | [x] | 0.64 |
+| RNN | [x] | [x] | [x] | 0.64 |
+| LSTM | [x] | [x] | [x] | 0.64 |
+| Sequential | [x] | [x] | [x] | 0.64 |
+| Residual | [x] | [x] | [x] | 0.64 |
+| KMeans | [x] | [x] | [x] | 0.64 |
+| Mamba | [x] | [x] | [x] | 0.64 |
+| Metacognition | [x] | [x] | [x] | 0.64 |
+| GDN | [x] | [x] | [x] | 0.64 |
+| Parallel | [x] | [x] | [x] | 0.64 |
+| Stack | [x] | [x] | [x] | 0.64 |
 
-**Checkpoint:** ⬜ not signed yet (CUDA).
+**Checkpoint:** ✅ `TestGoVCudaProxyTrain` PASS (65 groups, ~548s @ BENCH_ITERS=1); `TestGoVCudaProxyVolumeTrain` PASS (69 groups, ~728s @ BENCH_ITERS=1).
 
 ---
 
@@ -2004,6 +2004,7 @@ Run: `./scripts/linux_build_w2a.sh --training-25-29-all`.
 | **0.61** | MeshTweenChain (`MTC1`/`MTCO`, `MGC1`/`MGCO` ≡ MeshBP FamilyBP) — 160 groups; `TestGoVCudaMeshTweenChainTrain` PASS (~1555s @ BENCH_ITERS=1). Engine board **61 / 100**. |
 | **0.62** | ModeStepTween Line FamilyTween (`STW1`/`STWO`; `apply_projected` @ lr×0.5) — 130 groups; `TestGoVCudaStepTweenTrain` PASS (~714s @ BENCH_ITERS=1). Engine board **62 / 100**. |
 | **0.63** | ModeStepTweenChain Line FamilyBP alias (`STC1`/`STCO` ≡ StepBP) — 130 groups; `TestGoVCudaStepTweenChainTrain` PASS (~729s @ BENCH_ITERS=1). Engine board **63 / 100**. |
+| **0.64** | ModeTweenSplitHeadProxy (`GPB1`/`GPBO` + `PGB1`/`PGVO` variant 1) — 65 leaf + 69 volume; `TestGoVCudaProxyTrain`/`ProxyVolumeTrain` PASS (~548s / ~728s @ BENCH_ITERS=1). Engine board **64 / 100**. |
 | | Tick rows + bump version as w2a `go_v_cuda` suites pass. |
 
 ## Mixed Go / C++ / CUDA routing — sign-off evidence

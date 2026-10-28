@@ -3,7 +3,7 @@
 **Authoritative checklist:** [README.md](README.md).  
 **Training detail:** [docs/TRAINING_CHECKLIST.md](docs/TRAINING_CHECKLIST.md).
 
-**Version `0.63`** — engine board **63 / 100**. Dump: `welvet_dense_fwd --gaps`.
+**Version `0.64`** — engine board **64 / 100**. Dump: `welvet_dense_fwd --gaps`.
 
 ```bash
 ./scripts/build_linux.sh
@@ -22,6 +22,7 @@
 ./scripts/linux_build_w2a.sh --meshtweenchain-train
 ./scripts/linux_build_w2a.sh --steptween-train
 ./scripts/linux_build_w2a.sh --steptweenchain-train
+./scripts/linux_build_w2a.sh --proxy-train
 ```
 
 ## Done
@@ -44,9 +45,10 @@
 | **MeshTweenChain** | MTC1/MTCO + MGC1/MGCO ≡ MeshBP FamilyBP — 160 groups — `TestGoVCudaMeshTweenChainTrain` PASS |
 | **ModeStepTween** | STW1/STWO Line FamilyTween @ lr×0.5 + Tween volumes — 130 groups — `TestGoVCudaStepTweenTrain` PASS |
 | **ModeStepTweenChain** | STC1/STCO Line FamilyBP alias + TweenChain volumes — 130 groups — `TestGoVCudaStepTweenChainTrain` PASS |
+| **ModeTweenSplitHeadProxy** | GPB1/GPBO + PGB1/PGVO variant 1 — 65 leaf + 69 volume — `TestGoVCudaProxyTrain`/`ProxyVolumeTrain` PASS |
 
 ## Open
 
-Remaining Tween* (proxy/MeshSplit…) / CamSync / Freeze/Shadow / other systems / model / lucy / peak fused / NAC / Windows / packed quants. See README.
+Remaining Tween* (Linear/FastProxy/cache/async/sparse + Mesh/Step proxy…) / CamSync / Freeze/Shadow / other systems / model / lucy / peak fused / NAC / Windows / packed quants. See README.
 
 Live counters: `./build/welvet_dense_fwd --gaps`.

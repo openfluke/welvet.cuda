@@ -59,6 +59,8 @@
 //   MGB1 — Heterogeneous mesh-clock MeshBP → MGBO; --bench → WVB1
 //   MGW1 — Heterogeneous mesh-clock MeshTween → MGWO; --bench → WVB1
 //   MGC1 — Heterogeneous mesh-clock MeshTweenChain → MGCO; --bench → WVB1
+//   GPB1 — TweenSplit proxy leaf (variant 1–6) → GPBO; --bench → WVB1
+//   PGB1 — TweenSplit proxy volume (variant 1–6) → PGVO; --bench → WVB1
 //   MBB1/MBV1 Mamba; MCB1/MCV1 Meta; GDB1/GDV1 GDN; KMB1/KMV1 KMeans;
 //   PNB1/PNV1 Parallel; PPB1 poly; NBL1 edges
 
@@ -1369,6 +1371,16 @@ int main(int argc, char** argv) {
   if (std::memcmp(magic, "SKTC", 4) == 0) return run_volume_stack_normalbp(bench_iters, VolumeTrainMode::TweenChain);
   if (std::memcmp(magic, "KMTC", 4) == 0) return run_volume_kmeans_normalbp(bench_iters, VolumeTrainMode::TweenChain);
   if (std::memcmp(magic, "PNTC", 4) == 0) return run_volume_parallel_normalbp(bench_iters, VolumeTrainMode::TweenChain);
+  if (std::memcmp(magic, "PGB1", 4) == 0) {
+    int32_t variant = 0;
+    if (!read_exact(&variant, 1) || variant < 1 || variant > 6) return 2;
+    return run_mesh_generic_bp(bench_iters, false, "PGVO", variant);
+  }
+  if (std::memcmp(magic, "GPB1", 4) == 0) {
+    int32_t variant = 0;
+    if (!read_exact(&variant, 1) || variant < 1 || variant > 6) return 2;
+    return run_tween_leaf(bench_iters, static_cast<VolumeTrainMode>(4 + variant));
+  }
   if (std::memcmp(magic, "TSB1", 4) == 0) return run_tween_leaf(bench_iters, VolumeTrainMode::TweenSplit);
   if (std::memcmp(magic, "TSP1", 4) == 0) return run_volume_normalbp(bench_iters, VolumeTrainMode::TweenSplit);
   if (std::memcmp(magic, "TRP1", 4) == 0) return run_volume_rmsnorm_normalbp(bench_iters, VolumeTrainMode::TweenSplit);

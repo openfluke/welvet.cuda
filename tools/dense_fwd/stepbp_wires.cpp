@@ -8,6 +8,7 @@
 #include "welvet/dtype.hpp"
 #include "welvet/layer.hpp"
 #include "welvet/parallel.hpp"
+#include "welvet/runtime/forward.hpp"
 #include "welvet/runtime/line.hpp"
 #include "welvet/runtime/step.hpp"
 #include "welvet/runtime/training.hpp"
@@ -17,6 +18,7 @@
 #include "welvet/runtime/tween_train.hpp"
 #include "welvet/stack.hpp"
 #include "welvet/systems/tween.hpp"
+#include "welvet/systems/tween_split.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -498,9 +500,30 @@ int run_mesh_generic_bp(int bench_iters, bool tween, const char* out_magic, int 
         return st;
     }
     if (proxy_volume) {
-      // Volume-proxy mesh variants land with TweenSplit*; MeshBP uses the step clock.
-      return Status::Gap("mesh proxy_volume not wired on CUDA");
-    }
+      gin = {};
+      grads.assign(coords.size(), {});
+      for (int t = 0; t < ticks; ++t) {
+        runtime::forward::Result fwd;
+        if (auto st = runtime::forward::volume_dense(grid, input, &fwd); !st) return st;
+        state.history_in.emplace_back(coords.size());
+        state.history_pre.emplace_back(coords.size());
+        posts.emplace_back(coords.size());
+        for (const auto& node : fwd.steps) {
+          const auto& c = node.coord;
+          size_t i =
+              ((static_cast<size_t>(c.z) * rows + c.y) * cols + c.x) * lpc + c.l;
+          state.history_in.back()[i] = node.input;
+          state.history_pre.back()[i] = node.pre;
+          posts.back()[i] = node.post;
+        }
+        post = fwd.output;
+        if (auto st = systems::tween_split::train_volume_variant(
+                grid, fwd, target, lr, &loss,
+                static_cast<systems::tween_split::Variant>(proxy_volume));
+            !st)
+          return st;
+      }
+    } else {
     for (int t = 0; t < ticks; ++t) {
       runtime::step::set_input(&state, input);
       if (auto st = runtime::step::forward(grid, &state, true); !st) return st;
@@ -519,6 +542,7 @@ int run_mesh_generic_bp(int bench_iters, bool tween, const char* out_magic, int 
     } else {
       if (auto st = runtime::step::backward(grid, &state, gy, &gin, &grads); !st) return st;
       if (auto st = runtime::step::apply_sgd(grid, grads, lr); !st) return st;
+    }
     }
     weights.resize(coords.size());
     for (size_t i = 0; i < coords.size(); ++i)
@@ -570,11 +594,12 @@ int run_mesh_generic_bp(int bench_iters, bool tween, const char* out_magic, int 
 }
 
 int run_tween_leaf(int bench_iters, VolumeTrainMode mode) {
+  const bool proxy = int(mode) >= int(VolumeTrainMode::ProxyHead);
   const bool chain = mode == VolumeTrainMode::TweenChain;
   const bool split = mode == VolumeTrainMode::TweenSplit;
   const bool alt = mode == VolumeTrainMode::TweenAlt;
-  const char* request = alt ? "TAB1" : split ? "TSB1" : chain ? "TCB1" : "TWB1";
-  const char* response = alt ? "TABO" : split ? "TSBO" : chain ? "TCBO" : "TWBO";
+  const char* request = proxy ? "GPB1" : alt ? "TAB1" : split ? "TSB1" : chain ? "TCB1" : "TWB1";
+  const char* response = proxy ? "GPBO" : alt ? "TABO" : split ? "TSBO" : chain ? "TCBO" : "TWBO";
   int32_t n_children = 0, n_ticks = 0, batch = 0;
   double lr = 0.0;
   if (!read_exact(&n_children, 1) || !read_exact(&n_ticks, 1) || !read_exact(&batch, 1) ||
@@ -583,7 +608,6 @@ int run_tween_leaf(int bench_iters, VolumeTrainMode mode) {
     return 2;
   }
   if (n_children <= 0 || n_ticks <= 0 || batch <= 0) return 1;
-  (void)n_ticks;
 
   ChildReader initial;
   welvet::stack::Layer stack;
@@ -609,10 +633,13 @@ int run_tween_leaf(int bench_iters, VolumeTrainMode mode) {
   std::vector<float> x(static_cast<std::size_t>(x_len));
   std::vector<float> tgt(static_cast<std::size_t>(t_len));
   if (!read_exact(x.data(), x.size()) || !read_exact(tgt.data(), tgt.size())) return 2;
+  std::vector<std::vector<float>> samples{x}, targets{tgt};
   for (int32_t t = 1; t < n_ticks; ++t) {
-    std::vector<float> xs(static_cast<std::size_t>(x_len));
-    std::vector<float> ts(static_cast<std::size_t>(t_len));
-    if (!read_exact(xs.data(), xs.size()) || !read_exact(ts.data(), ts.size())) return 2;
+    samples.emplace_back(static_cast<std::size_t>(x_len));
+    targets.emplace_back(static_cast<std::size_t>(t_len));
+    if (!read_exact(samples.back().data(), samples.back().size()) ||
+        !read_exact(targets.back().data(), targets.back().size()))
+      return 2;
   }
   (void)batch;
 
@@ -631,6 +658,19 @@ int run_tween_leaf(int bench_iters, VolumeTrainMode mode) {
     for (auto& child : stack.children) {
       if (!read_child(replay, &child))
         return welvet::Status::Err(welvet::StatusCode::Internal, "invalid Tween child replay");
+    }
+    if (proxy) {
+      auto variant =
+          static_cast<welvet::systems::tween_split::Variant>(int(mode) - 4);
+      for (int32_t t = 0; t < n_ticks; ++t) {
+        xin.data = samples[static_cast<std::size_t>(t)];
+        target.data = targets[static_cast<std::size_t>(t)];
+        if (auto st = welvet::systems::tween_split::train_stack_variant(stack, xin, target, lr,
+                                                                       &loss, variant);
+            !st)
+          return st;
+      }
+      return welvet::Status::Ok();
     }
     if (alt)
       return welvet::runtime::tween_alt_train::train_stack_mse(stack, xin, target, lr, &loss);

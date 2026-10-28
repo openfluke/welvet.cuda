@@ -262,6 +262,73 @@ Status apply_leaves(std::vector<Leaf>& leaves, const TensorF32& grad_out, double
   return Status::Ok();
 }
 
+// Head full Backward+SGD; returns true input gradient (Go trainTweenSplitHeadProxy).
+Status apply_leaf_gx(Leaf& leaf, const TensorF32& gy, double lr, TensorF32* gx_out) {
+  if (!gx_out) return Status::Err(StatusCode::InvalidArgument, "tween_split: nil gx");
+  *gx_out = TensorF32{};
+  if (gy.data.empty() || leaf.input.data.empty()) return Status::Ok();
+  if (leaf.dense) {
+    TensorF32 dW;
+    if (auto st = dense::backward_f32(*leaf.dense, gy, leaf.input, leaf.pre, gx_out, &dW); !st)
+      return st;
+    if (lr != 0.0 && !dW.data.empty()) return dense::apply_grad_sgd(leaf.dense, dW, lr);
+    return Status::Ok();
+  }
+  if (leaf.child) {
+    return stack::child_family_bp(*leaf.child, gy, leaf.input, leaf.pre, lr, gx_out);
+  }
+  if (leaf.cell) {
+    TensorF32 dW;
+    if (auto st = runtime::backward::cell(*leaf.cell, gy, leaf.input, leaf.pre, gx_out, &dW); !st)
+      return st;
+    return apply_cell_dw(*leaf.cell, dW, lr);
+  }
+  return Status::Ok();
+}
+
+Status apply_hidden_dw(std::vector<Leaf>& leaves, int begin, int end, const TensorF32& src,
+                       double scale, double lr) {
+  for (int i = begin; i < end; ++i) {
+    Leaf& leaf = leaves[static_cast<std::size_t>(i)];
+    if (leaf.post.data.empty()) continue;
+    TensorF32 gi;
+    if (auto st = systems::tween::project_gap(src, leaf.post.shape, &gi); !st) return st;
+    scale_gap(&gi, scale);
+    if (auto st = apply_one_leaf(leaf, gi, lr); !st) {
+      return Status::Err(st.code, std::string("tween_split hidden: ") + st.message);
+    }
+  }
+  return Status::Ok();
+}
+
+Status apply_head_proxy_leaves(std::vector<Leaf>& leaves, const TensorF32& grad_out, double lr) {
+  const int n = static_cast<int>(leaves.size());
+  if (n == 0) return Status::Ok();
+  Leaf& head = leaves[static_cast<std::size_t>(n - 1)];
+  if (head.post.data.empty()) return apply_leaves(leaves, grad_out, lr);
+  TensorF32 g_head;
+  if (auto st = systems::tween::project_gap(grad_out, head.post.shape, &g_head); !st) return st;
+  TensorF32 gx;
+  if (auto st = apply_leaf_gx(head, g_head, lr, &gx); !st) {
+    return Status::Err(st.code, std::string("tween_split head: ") + st.message);
+  }
+  if (n == 1) return Status::Ok();
+  const TensorF32& src = gx.data.empty() ? grad_out : gx;
+  const double scale = 1.0 / static_cast<double>(n - 1);
+  return apply_hidden_dw(leaves, 0, n - 1, src, scale, lr);
+}
+
+Status apply_variant_leaves(std::vector<Leaf>& leaves, const TensorF32& gy, double lr,
+                            Variant variant) {
+  if (static_cast<int>(variant) < 0 || static_cast<int>(variant) > 6) {
+    return Status::Gap("split: unsupported variant");
+  }
+  if (variant == Variant::Split) return apply_leaves(leaves, gy, lr);
+  if (variant == Variant::HeadProxy) return apply_head_proxy_leaves(leaves, gy, lr);
+  return Status::Gap(std::string("tween_split variant ") +
+                     std::to_string(static_cast<int>(variant)) + " not wired on CUDA yet");
+}
+
 Status collect_stack_leaves(stack::Layer& ops, const TensorF32& input, std::vector<Leaf>* leaves,
                             TensorF32* output = nullptr) {
   std::vector<stack::Child*> flat;
@@ -362,6 +429,43 @@ Status apply_cell_split(architecture::Cell& cell, const TensorF32& grad_out, con
   std::vector<Leaf> leaves;
   if (auto st = collect_cell_leaves(cell, input, pre, post, &leaves); !st) return st;
   return apply_leaves(leaves, grad_out, lr);
+}
+
+Status train_stack_variant(stack::Layer& ops, const TensorF32& input, const TensorF32& target,
+                           double lr, double* loss, Variant variant) {
+  if (!loss) return Status::Err(StatusCode::InvalidArgument, "proxy: nil loss");
+  std::vector<Leaf> leaves;
+  TensorF32 post, gy;
+  if (auto st = collect_stack_leaves(ops, input, &leaves, &post); !st) return st;
+  if (auto st = runtime::training::mse(post, target, loss); !st) return st;
+  if (auto st = runtime::training::mse_grad(post, target, &gy); !st) return st;
+  return apply_variant_leaves(leaves, gy, lr, variant);
+}
+
+Status apply_variant_child(stack::Child& child, const TensorF32& gy, const TensorF32& input,
+                           double lr, Variant variant) {
+  std::vector<Leaf> leaves;
+  if (auto st = collect_child(child, input, &leaves); !st) return st;
+  return apply_variant_leaves(leaves, gy, lr, variant);
+}
+
+Status train_volume_variant(architecture::Grid& g, const runtime::forward::Result& fwd,
+                            const TensorF32& target, double lr, double* loss, Variant variant) {
+  if (!loss) return Status::Err(StatusCode::InvalidArgument, "proxy: nil loss");
+  TensorF32 gy;
+  std::vector<Leaf> leaves;
+  if (auto st = runtime::training::mse(fwd.output, target, loss); !st) return st;
+  if (auto st = runtime::training::mse_grad(fwd.output, target, &gy); !st) return st;
+  if (auto st = collect_volume_leaves(g, fwd, &leaves); !st) return st;
+  return apply_variant_leaves(leaves, gy, lr, variant);
+}
+
+Status apply_cell_variant(architecture::Cell& cell, const TensorF32& gy, const TensorF32& input,
+                          const TensorF32& pre, const TensorF32& post, double lr, Variant variant) {
+  if (cell.meta.is_disabled || input.data.empty() || gy.data.empty()) return Status::Ok();
+  std::vector<Leaf> leaves;
+  if (auto st = collect_cell_leaves(cell, input, pre, post, &leaves); !st) return st;
+  return apply_variant_leaves(leaves, gy, lr, variant);
 }
 
 } // namespace welvet::systems::tween_split
