@@ -52,7 +52,7 @@ extern "C" {
 
 const char* welvet_version(void) {
   // ModeStepTweenSplit Line FamilyTweenSplit STS1 (TestGoVCudaStepTweenSplitTrain) → board 57/100.
-  return "0.57";
+  return "0.58";
 }
 
 const char* welvet_runtime_identity(void) {

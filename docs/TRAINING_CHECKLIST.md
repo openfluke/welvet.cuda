@@ -9,8 +9,8 @@ Canonical enum: Go `layers/parallel/train_mode.go` (`TrainMode`).
 and [`welvet.cpp/docs/TRAINING_CHECKLIST.md`](../../welvet.cpp/docs/TRAINING_CHECKLIST.md).
 Same cases / wires / column meanings; status here is **CUDA** only. metal/cpp checkmarks do **not** transfer credit.
 
-**Current engine:** `0.57` (leaf FormatNone forwards + NormalBP + StepBP + MeshBP + ModeTween + ModeTweenChain + ModeTweenSplit + **ModeStepTweenSplit signed** — **57 / 100** on the engine board).
-Leaf forward + NormalBP leaf/volume signed for all 23 layer kinds (+ seqmix metadata). `TestGoVCudaNormalBP` PASS. `TestGoVCudaStepBPTrain` PASS. `TestGoVCudaMeshBPTrain` PASS. `TestGoVCudaTweenTrain` PASS. `TestGoVCudaTweenChainTrain` PASS. `TestGoVCudaTweenSplitTrain` PASS. `TestGoVCudaStepTweenSplitTrain` PASS (130 groups). Remaining Tween* variants / CamSync remain open.
+**Current engine:** `0.58` (leaf FormatNone forwards + NormalBP + StepBP + MeshBP + ModeTween + ModeTweenChain + ModeTweenSplit + ModeStepTweenSplit + **ModeTweenAlt signed** — **58 / 100** on the engine board).
+Leaf forward + NormalBP leaf/volume signed for all 23 layer kinds (+ seqmix metadata). `TestGoVCudaNormalBP` PASS. `TestGoVCudaStepBPTrain` PASS. `TestGoVCudaMeshBPTrain` PASS. `TestGoVCudaTweenTrain` PASS. `TestGoVCudaTweenChainTrain` PASS. `TestGoVCudaTweenSplitTrain` PASS. `TestGoVCudaStepTweenSplitTrain` PASS. `TestGoVCudaTweenAltTrain` PASS (130 groups). Remaining Tween* variants / CamSync remain open.
 
 ---
 
@@ -84,7 +84,7 @@ Not signed yet. Same scope as welvet.metal when the CUDA path lands: Freeze/Shad
 | MSE / MSEGrad | ✅ host f64 match Go (Dense NormalBP) |
 | SGD and native storage updates | ✅ FormatNone Dense SGD |
 | GDN | ✅ f32 truncated-BPTT NormalBP leaf+vol |
-| Tween / TweenChain / Split / Alt / proxy / mesh variants | 🚧 ModeTween + ModeTweenChain + ModeTweenSplit + ModeStepTweenSplit signed; remaining Tween* open |
+| Tween / TweenChain / Split / Alt / proxy / mesh variants | 🚧 ModeTween + ModeTweenChain + ModeTweenSplit + ModeStepTweenSplit + ModeTweenAlt signed; remaining Tween* open |
 | Scheduling and data movement | Host validation, scheduling, allocation, copies and storage staging (permitted) |
 | GPU-only enforcement | M0 host scaffold only; numerical CUDA-only gate lands with first training suites |
 
@@ -676,15 +676,15 @@ Split at full lr, refresh prediction and gap, then Tween at lr×0.5. AltTimes=1 
 
 | Evidence | Status | Scope |
 |---|:---:|---|
-| Dense multi-hop Float32 | [ ] | Loss and updated weights; frozen Line gap where applicable |
-| All supported leaf families | [ ] | 23 families; 22 ×34 dtype sweeps, GDN Float32 only |
-| CNN2/3 and ConvT2/3 | [ ] | Explicit rank-4/rank-5 ×34 fixtures |
-| Volume 222 Float32 | [ ] | All 23 supported families |
-| Volume 211 ×34 | [ ] | All 22 dtype-generic families; shared parent volume credit for Line variants |
-| Benchmark reset | [ ] | Every leaf dtype sweep compares measured-run output with an independent fixture |
-| Collect/phase primitives | [ ] | Hand-calculated 1/N sharing and refreshed Alt loss/weights; input tape retained |
+| Dense multi-hop Float32 | [x] | Loss and updated weights; frozen Line gap where applicable |
+| All supported leaf families | [x] | 23 families; 22 ×34 dtype sweeps, GDN Float32 only |
+| CNN2/3 and ConvT2/3 | [x] | Explicit rank-4/rank-5 ×34 fixtures |
+| Volume 222 Float32 | [x] | All 23 supported families |
+| Volume 211 ×34 | [x] | All 22 dtype-generic families; shared parent volume credit for Line variants |
+| Benchmark reset | [x] | Every leaf dtype sweep compares measured-run output with an independent fixture |
+| Collect/phase primitives | [x] | Hand-calculated 1/N sharing and refreshed Alt loss/weights; input tape retained |
 
-**Status:** ⬜ not signed yet (CUDA).
+**Status:** ✅ ModeTweenAlt signed (CUDA). All 130 groups passed in 736.794s.
 
 ## w2a Go↔CUDA (StepTweenAlt ModeStepTweenAlt) — sign-off evidence
 
@@ -1349,31 +1349,31 @@ CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures. Default AltTimes=1.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [ ] | [ ] | |
-| Residual | [ ] | [ ] | [ ] | |
-| KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
-| Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 0.58 |
+| RMSNorm | [x] | [x] | [x] | 0.58 |
+| LayerNorm | [x] | [x] | [x] | 0.58 |
+| SwiGLU | [x] | [x] | [x] | 0.58 |
+| Softmax | [x] | [x] | [x] | 0.58 |
+| Embedding | [x] | [x] | [x] | 0.58 |
+| MHA | [x] | [x] | [x] | 0.58 |
+| CNN1 | [x] | [x] | [x] | 0.58 |
+| CNN2 | [x] | [x] | [x] | 0.58 |
+| CNN3 | [x] | [x] | [x] | 0.58 |
+| ConvT1 | [x] | [x] | [x] | 0.58 |
+| ConvT2 | [x] | [x] | [x] | 0.58 |
+| ConvT3 | [x] | [x] | [x] | 0.58 |
+| RNN | [x] | [x] | [x] | 0.58 |
+| LSTM | [x] | [x] | [x] | 0.58 |
+| Sequential | [x] | [x] | [x] | 0.58 |
+| Residual | [x] | [x] | [x] | 0.58 |
+| KMeans | [x] | [x] | [x] | 0.58 |
+| Mamba | [x] | [x] | [x] | 0.58 |
+| Metacognition | [x] | [x] | [x] | 0.58 |
+| GDN | [x] | [x] | [x] | 0.58 |
+| Parallel | [x] | [x] | [x] | 0.58 |
+| Stack | [x] | [x] | [x] | 0.58 |
 
-**Checkpoint:** ⬜ not signed yet (CUDA).
+**Checkpoint:** ✅ ModeTweenAlt signed (CUDA) — Split@lr → refresh → Tween@lr×0.5; TAB1/TABO + TAV1/per-kind; 130 groups in 736.794s.
 
 ---
 

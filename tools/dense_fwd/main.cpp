@@ -49,6 +49,7 @@
 //   STKV — Volume Stack NestedStack-of-Dense NormalBP → STVO; --bench → WVB1
 //   STB1 — Line StepBP FamilyBP → STBO; --bench → WVB1
 //   STS1 — Line StepTweenSplit FamilyTweenSplit → STSO; --bench → WVB1
+//   TAB1 — ModeTweenAlt leaf stack → TABO; volumes TAV1/TRA1…/KMAL/PNAL
 //   MBP1 — Dense mesh-clock MeshBP → MBPO; --bench → WVB1
 //   MGB1 — Heterogeneous mesh-clock MeshBP → MGBO; --bench → WVB1
 //   MBB1/MBV1 Mamba; MCB1/MCV1 Meta; GDB1/GDV1 GDN; KMB1/KMV1 KMeans;
@@ -1379,6 +1380,30 @@ int main(int argc, char** argv) {
   if (std::memcmp(magic, "SKTP", 4) == 0) return run_volume_stack_normalbp(bench_iters, VolumeTrainMode::TweenSplit);
   if (std::memcmp(magic, "KMSP", 4) == 0) return run_volume_kmeans_normalbp(bench_iters, VolumeTrainMode::TweenSplit);
   if (std::memcmp(magic, "PNSP", 4) == 0) return run_volume_parallel_normalbp(bench_iters, VolumeTrainMode::TweenSplit);
+  if (std::memcmp(magic, "TAB1", 4) == 0) return run_tween_leaf(bench_iters, VolumeTrainMode::TweenAlt);
+  if (std::memcmp(magic, "TAV1", 4) == 0) return run_volume_normalbp(bench_iters, VolumeTrainMode::TweenAlt);
+  if (std::memcmp(magic, "TRA1", 4) == 0) return run_volume_rmsnorm_normalbp(bench_iters, VolumeTrainMode::TweenAlt);
+  if (std::memcmp(magic, "TLA1", 4) == 0) return run_volume_layernorm_normalbp(bench_iters, VolumeTrainMode::TweenAlt);
+  if (std::memcmp(magic, "TGA1", 4) == 0) return run_volume_swiglu_normalbp(bench_iters, VolumeTrainMode::TweenAlt);
+  if (std::memcmp(magic, "TXA1", 4) == 0) return run_volume_softmax_normalbp(bench_iters, VolumeTrainMode::TweenAlt);
+  if (std::memcmp(magic, "TEA1", 4) == 0) return run_volume_embedding_normalbp(bench_iters, VolumeTrainMode::TweenAlt);
+  if (std::memcmp(magic, "THA1", 4) == 0) return run_volume_mha_normalbp(bench_iters, VolumeTrainMode::TweenAlt);
+  if (std::memcmp(magic, "C1TA", 4) == 0) return run_volume_cnn1_normalbp(bench_iters, VolumeTrainMode::TweenAlt);
+  if (std::memcmp(magic, "C2TA", 4) == 0) return run_volume_cnn2_normalbp(bench_iters, VolumeTrainMode::TweenAlt);
+  if (std::memcmp(magic, "C3TA", 4) == 0) return run_volume_cnn3_normalbp(bench_iters, VolumeTrainMode::TweenAlt);
+  if (std::memcmp(magic, "T1TA", 4) == 0) return run_volume_convt1_normalbp(bench_iters, VolumeTrainMode::TweenAlt);
+  if (std::memcmp(magic, "T2TA", 4) == 0) return run_volume_convt2_normalbp(bench_iters, VolumeTrainMode::TweenAlt);
+  if (std::memcmp(magic, "T3TA", 4) == 0) return run_volume_convt3_normalbp(bench_iters, VolumeTrainMode::TweenAlt);
+  if (std::memcmp(magic, "RNTA", 4) == 0) return run_volume_rnn_normalbp(bench_iters, VolumeTrainMode::TweenAlt);
+  if (std::memcmp(magic, "LSTA", 4) == 0) return run_volume_lstm_normalbp(bench_iters, VolumeTrainMode::TweenAlt);
+  if (std::memcmp(magic, "SQTA", 4) == 0) return run_volume_sequential_normalbp(bench_iters, VolumeTrainMode::TweenAlt);
+  if (std::memcmp(magic, "RETA", 4) == 0) return run_volume_residual_normalbp(bench_iters, VolumeTrainMode::TweenAlt);
+  if (std::memcmp(magic, "MBTA", 4) == 0) return run_volume_mamba_normalbp(bench_iters, VolumeTrainMode::TweenAlt);
+  if (std::memcmp(magic, "MCTA", 4) == 0) return run_volume_metacognition_normalbp(bench_iters, VolumeTrainMode::TweenAlt);
+  if (std::memcmp(magic, "GDTA", 4) == 0) return run_volume_gdn_normalbp(bench_iters, VolumeTrainMode::TweenAlt);
+  if (std::memcmp(magic, "SKTA", 4) == 0) return run_volume_stack_normalbp(bench_iters, VolumeTrainMode::TweenAlt);
+  if (std::memcmp(magic, "KMAL", 4) == 0) return run_volume_kmeans_normalbp(bench_iters, VolumeTrainMode::TweenAlt);
+  if (std::memcmp(magic, "PNAL", 4) == 0) return run_volume_parallel_normalbp(bench_iters, VolumeTrainMode::TweenAlt);
   if (std::memcmp(magic, "MBP1", 4) == 0) return run_meshbp(bench_iters);
   if (std::memcmp(magic, "MGB1", 4) == 0) return run_mesh_generic_bp(bench_iters);
   if (std::memcmp(magic, "MBB1", 4) == 0) return run_mamba_normalbp(bench_iters);
