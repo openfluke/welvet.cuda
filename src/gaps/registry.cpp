@@ -140,6 +140,8 @@ const std::vector<Entry>& build() {
        "MeshTweenSplit last-tick FamilyTweenSplit 1/N @ full lr (MGS1/MGSO)", true},
       {"runtime.step.meshtweenalt", "runtime",
        "MeshTweenAlt last-tick Split→Tween@lr×0.5 (MGA1/MGAO)", true},
+      {"runtime.step.meshtweensplit_fast_proxy", "runtime",
+       "MeshTweenSplitFastProxy last-tick FastProxy (MGF1/MGFO)", true},
       {"systems.dna", "systems", "gap? DNA", false},
       {"systems.evolution", "systems", "gap? evolution", false},
       {"systems.tanhi", "systems", "gap? TANHI", false},
