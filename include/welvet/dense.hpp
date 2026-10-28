@@ -62,6 +62,14 @@ Status forward_f32(const Layer& layer, const TensorF32& input, TensorF32* pre, T
 Status backward_f32(const Layer& layer, const TensorF32& grad_out, const TensorF32& input,
                     const TensorF32& pre, TensorF32* grad_in, TensorF32* grad_w);
 
+// Go dense.LinearGradIn: gx = Wᵀ gy with no ⊙ act′ (TweenSplitLinear walk).
+Status linear_grad_in(const Layer& layer, const TensorF32& gy, const TensorF32& input,
+                      TensorF32* gx);
+
+// Go dense.GradWOnly: dW outer product; discards gin (hidden proxy / linear walk).
+Status grad_w_only(const Layer& layer, const TensorF32& gy, const TensorF32& input,
+                   const TensorF32& pre, TensorF32* dw);
+
 // FormatNone SGD: W ← W − lr·dW, then invalidate resident GPU mirror.
 Status apply_grad_sgd(Layer* layer, const TensorF32& dW, double lr);
 

@@ -109,6 +109,8 @@ const std::vector<Entry>& build() {
       {"systems.tween_split_head_proxy", "systems",
        "ModeTweenSplitHeadProxy head Backward+SGD @ full lr; hidden 1/(N−1) GradWOnly; GPB1/PGB1 variant 1",
        true},
+      {"systems.tween_split_linear", "systems",
+       "ModeTweenSplitLinear reverse walk 1/N + LinearGradIn; GPB1/PGB1 variant 2", true},
       {"runtime.line.family_tween_split", "runtime",
        "Line FamilyTweenSplit on pop (STS1/STSO; apply_split_child 1/N @ full lr)", true},
       {"systems.tween_alt", "systems",

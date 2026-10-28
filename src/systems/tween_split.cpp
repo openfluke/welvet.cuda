@@ -318,13 +318,185 @@ Status apply_head_proxy_leaves(std::vector<Leaf>& leaves, const TensorF32& grad_
   return apply_hidden_dw(leaves, 0, n - 1, src, scale, lr);
 }
 
+dense::Layer* dense_of(Leaf& l) {
+  if (l.dense) return l.dense;
+  if (l.child && l.child->kind == stack::Kind::Dense) return &l.child->dense_op;
+  if (l.cell && l.cell->op_kind == architecture::OpKind::Dense) return &l.cell->dense_op;
+  return nullptr;
+}
+
+Status leaf_dw_linear(Leaf& leaf, const TensorF32& gy, double lr) {
+  if (auto* d = dense_of(leaf)) {
+    TensorF32 dW;
+    if (auto st = dense::grad_w_only(*d, gy, leaf.input, leaf.pre, &dW); !st) return st;
+    if (lr != 0.0 && !dW.data.empty()) return dense::apply_grad_sgd(d, dW, lr);
+    return Status::Ok();
+  }
+  return apply_one_leaf(leaf, gy, lr);
+}
+
+Status linear_grad_in_leaf(Leaf& leaf, const TensorF32& gy, TensorF32* gx_out) {
+  if (!gx_out) return Status::Err(StatusCode::InvalidArgument, "tween_split linear: nil gx");
+  *gx_out = TensorF32{};
+  if (gy.data.empty() || leaf.input.data.empty()) return Status::Ok();
+  if (auto* d = dense_of(leaf)) return dense::linear_grad_in(*d, gy, leaf.input, gx_out);
+  TensorF32 dW;
+  if (leaf.child) {
+    if (auto st = stack::child_family_bp(*leaf.child, gy, leaf.input, leaf.pre, 0.0, gx_out); !st)
+      return st;
+    if (gx_out->data.empty())
+      return systems::tween::project_gap(gy, leaf.input.shape, gx_out);
+    return Status::Ok();
+  }
+  if (leaf.cell) {
+    if (auto st = runtime::backward::cell(*leaf.cell, gy, leaf.input, leaf.pre, gx_out, &dW); !st)
+      return st;
+    if (gx_out->data.empty())
+      return systems::tween::project_gap(gy, leaf.input.shape, gx_out);
+    return Status::Ok();
+  }
+  return systems::tween::project_gap(gy, leaf.input.shape, gx_out);
+}
+
+Status add_gx(TensorF32* a, const TensorF32& b) {
+  if (!a || b.data.empty()) return Status::Ok();
+  if (a->data.empty()) {
+    *a = b;
+    return Status::Ok();
+  }
+  if (a->data.size() != b.data.size()) return Status::Ok();
+  for (size_t i = 0; i < a->data.size(); ++i) a->data[i] += b.data[i];
+  return Status::Ok();
+}
+
+Leaf* find_leaf(std::vector<Leaf>& leaves, stack::Child* ch, dense::Layer* d = nullptr) {
+  for (auto& l : leaves) {
+    if (ch && l.child == ch) return &l;
+    if (d && dense_of(l) == d) return &l;
+  }
+  return nullptr;
+}
+
+Status linear_leaf(Leaf& l, const TensorF32& gy, double lr, int n,
+                   std::vector<Leaf>& leaves, std::vector<std::vector<float>>* fill, TensorF32* gx) {
+  TensorF32 gi;
+  if (auto st = systems::tween::project_gap(gy, l.post.shape, &gi); !st) return st;
+  if (fill) {
+    const size_t idx = static_cast<size_t>(&l - leaves.data());
+    if (idx < fill->size()) (*fill)[idx] = gi.data;
+  }
+  scale_gap(&gi, 1.0 / static_cast<double>(n));
+  if (auto st = leaf_dw_linear(l, gi, lr); !st) return st;
+  return linear_grad_in_leaf(l, gy, gx);
+}
+
+Status split_linear_parallel(stack::Child& ch, const TensorF32& gy, std::vector<Leaf>& leaves,
+                             std::vector<TensorF32>* branches) {
+  const int nb = static_cast<int>(ch.nested.size());
+  std::vector<TensorF32> posts;
+  posts.reserve(static_cast<size_t>(nb));
+  for (auto& b : ch.nested) {
+    if (auto* l = find_leaf(leaves, &b)) posts.push_back(l->post);
+    else posts.push_back(gy);
+  }
+  parallel::Layer tmp;
+  tmp.cfg.combine = static_cast<parallel::Combine>(ch.parallel_nest.combine);
+  tmp.cfg.sparse_k = ch.parallel_nest.sparse_k;
+  tmp.cfg.disagree_beta = ch.parallel_nest.disagree_beta;
+  tmp.cfg.branches = nb;
+  return parallel::split_combine_grad(tmp, gy, posts, branches);
+}
+
+Status walk_child(stack::Child& ch, const TensorF32& down, std::vector<Leaf>& leaves, double lr,
+                  std::vector<std::vector<float>>* fill, TensorF32* gx) {
+  const int n = static_cast<int>(leaves.size());
+  if (ch.kind == stack::Kind::NestedStack) {
+    TensorF32 gy = down;
+    for (int i = static_cast<int>(ch.nested.size()) - 1; i >= 0; --i) {
+      TensorF32 next;
+      if (auto st = walk_child(ch.nested[static_cast<size_t>(i)], gy, leaves, lr, fill, &next); !st)
+        return st;
+      if (!next.data.empty()) gy = std::move(next);
+    }
+    *gx = std::move(gy);
+    return Status::Ok();
+  }
+  if (ch.kind == stack::Kind::Sequential || ch.kind == stack::Kind::Residual) {
+    auto& children = ch.kind == stack::Kind::Sequential ? ch.sequential_op.children
+                                                         : ch.residual_op.children;
+    TensorF32 gy = down;
+    for (int i = static_cast<int>(children.size()) - 1; i >= 0; --i) {
+      if (auto* l = find_leaf(leaves, nullptr, &children[static_cast<size_t>(i)])) {
+        TensorF32 next;
+        if (auto st = linear_leaf(*l, gy, lr, n, leaves, fill, &next); !st) return st;
+        if (!next.data.empty()) gy = std::move(next);
+      }
+    }
+    if (ch.kind == stack::Kind::Residual) {
+      if (auto st = add_gx(&gy, down); !st) return st;
+    }
+    *gx = std::move(gy);
+    return Status::Ok();
+  }
+  if (ch.kind == stack::Kind::Parallel) {
+    std::vector<TensorF32> bgy;
+    if (auto st = split_linear_parallel(ch, down, leaves, &bgy); !st) return st;
+    *gx = TensorF32{};
+    for (size_t i = 0; i < ch.nested.size(); ++i) {
+      TensorF32 next;
+      if (auto st = walk_child(ch.nested[i], bgy[i], leaves, lr, fill, &next); !st) return st;
+      if (auto st = add_gx(gx, next); !st) return st;
+    }
+    return Status::Ok();
+  }
+  if (auto* l = find_leaf(leaves, &ch)) return linear_leaf(*l, down, lr, n, leaves, fill, gx);
+  *gx = TensorF32{};
+  return Status::Ok();
+}
+
+// Go linearWalkTape + applyLeafDW: project → scale 1/N → GradWOnly; gx = LinearGradIn.
+Status apply_linear_leaves(std::vector<Leaf>& leaves, const TensorF32& grad_out, double lr,
+                           std::vector<std::vector<float>>* fill, stack::Layer* root,
+                           stack::Child* child) {
+  const int n = static_cast<int>(leaves.size());
+  if (n == 0) return Status::Ok();
+  if (root) {
+    TensorF32 current = grad_out;
+    for (int i = static_cast<int>(root->children.size()) - 1; i >= 0; --i) {
+      TensorF32 next;
+      if (auto st = walk_child(root->children[static_cast<size_t>(i)], current, leaves, lr, fill,
+                               &next);
+          !st)
+        return st;
+      if (!next.data.empty()) current = std::move(next);
+    }
+    return Status::Ok();
+  }
+  if (child) {
+    TensorF32 gx;
+    return walk_child(*child, grad_out, leaves, lr, fill, &gx);
+  }
+  TensorF32 gy = grad_out;
+  for (int i = n - 1; i >= 0; --i) {
+    TensorF32 next;
+    if (auto st = linear_leaf(leaves[static_cast<size_t>(i)], gy, lr, n, leaves, fill, &next); !st)
+      return st;
+    if (!next.data.empty()) gy = std::move(next);
+  }
+  return Status::Ok();
+}
+
 Status apply_variant_leaves(std::vector<Leaf>& leaves, const TensorF32& gy, double lr,
-                            Variant variant) {
+                            Variant variant, stack::Layer* root = nullptr,
+                            stack::Child* child = nullptr) {
   if (static_cast<int>(variant) < 0 || static_cast<int>(variant) > 6) {
     return Status::Gap("split: unsupported variant");
   }
   if (variant == Variant::Split) return apply_leaves(leaves, gy, lr);
   if (variant == Variant::HeadProxy) return apply_head_proxy_leaves(leaves, gy, lr);
+  if (variant == Variant::Linear) {
+    return apply_linear_leaves(leaves, gy, lr, nullptr, root, child);
+  }
   return Status::Gap(std::string("tween_split variant ") +
                      std::to_string(static_cast<int>(variant)) + " not wired on CUDA yet");
 }
@@ -439,14 +611,14 @@ Status train_stack_variant(stack::Layer& ops, const TensorF32& input, const Tens
   if (auto st = collect_stack_leaves(ops, input, &leaves, &post); !st) return st;
   if (auto st = runtime::training::mse(post, target, loss); !st) return st;
   if (auto st = runtime::training::mse_grad(post, target, &gy); !st) return st;
-  return apply_variant_leaves(leaves, gy, lr, variant);
+  return apply_variant_leaves(leaves, gy, lr, variant, &ops, nullptr);
 }
 
 Status apply_variant_child(stack::Child& child, const TensorF32& gy, const TensorF32& input,
                            double lr, Variant variant) {
   std::vector<Leaf> leaves;
   if (auto st = collect_child(child, input, &leaves); !st) return st;
-  return apply_variant_leaves(leaves, gy, lr, variant);
+  return apply_variant_leaves(leaves, gy, lr, variant, nullptr, &child);
 }
 
 Status train_volume_variant(architecture::Grid& g, const runtime::forward::Result& fwd,

@@ -119,6 +119,77 @@ Status backward_f32(const Layer& layer, const TensorF32& grad_out, const TensorF
                                  grad_w->data.data());
 }
 
+static void remap_gap_len(const TensorF32& src, int need, std::vector<float>* out) {
+  out->assign(static_cast<std::size_t>(need), 0.0f);
+  const int sn = static_cast<int>(src.data.size());
+  if (sn <= 0 || need <= 0) return;
+  if (sn == need) {
+    out->assign(src.data.begin(), src.data.end());
+    return;
+  }
+  for (int i = 0; i < need; ++i) {
+    int lo = i * sn / need;
+    int hi = (i + 1) * sn / need;
+    if (hi <= lo) hi = lo + 1;
+    if (hi > sn) hi = sn;
+    double sum = 0.0;
+    for (int j = lo; j < hi; ++j) sum += static_cast<double>(src.data[static_cast<std::size_t>(j)]);
+    (*out)[static_cast<std::size_t>(i)] = static_cast<float>(sum / static_cast<double>(hi - lo));
+  }
+}
+
+Status linear_grad_in(const Layer& layer, const TensorF32& gy, const TensorF32& input,
+                      TensorF32* gx) {
+  if (!gx || input.shape.size() != 2 || input.data.empty() || gy.data.empty()) {
+    return Status::Err(StatusCode::InvalidArgument, "dense: LinearGradIn input");
+  }
+  const int batch = static_cast<int>(input.shape[0]);
+  const int in = layer.input_height;
+  const int out = layer.output_height;
+  if (batch <= 0 ||
+      input.data.size() != static_cast<std::size_t>(batch) * static_cast<std::size_t>(in) ||
+      static_cast<int>(input.shape[1]) != in) {
+    return Status::Err(StatusCode::InvalidArgument, "dense: LinearGradIn shape");
+  }
+  TensorF32 projected;
+  projected.shape = {batch, out};
+  remap_gap_len(gy, batch * out, &projected.data);
+  if (!layer.gpu_valid || layer.gpu_batch != batch) {
+    if (auto st = sync_gpu_from_weights(layer, batch); !st) return st;
+  }
+  TensorF32 pre = TensorF32::zeros(batch, out);
+  TensorF32 dw = TensorF32::zeros(out, in);
+  *gx = TensorF32::zeros(batch, in);
+  return cuda::resident_backward(const_cast<cuda::ResidentDense*>(&layer.gpu),
+                                 projected.data.data(), input.data.data(), pre.data.data(),
+                                 gx->data.data(), dw.data.data(), /*linear=*/true);
+}
+
+Status grad_w_only(const Layer& layer, const TensorF32& gy, const TensorF32& input,
+                   const TensorF32& pre, TensorF32* dw) {
+  if (!dw || input.shape.size() != 2 || gy.data.empty()) {
+    return Status::Err(StatusCode::InvalidArgument, "dense: GradWOnly input");
+  }
+  const int batch = static_cast<int>(input.shape[0]);
+  const int in = layer.input_height;
+  const int out = layer.output_height;
+  if (batch <= 0 ||
+      input.data.size() != static_cast<std::size_t>(batch) * static_cast<std::size_t>(in)) {
+    return Status::Err(StatusCode::InvalidArgument, "dense: GradWOnly shape");
+  }
+  TensorF32 projected;
+  projected.shape = {batch, out};
+  remap_gap_len(gy, batch * out, &projected.data);
+  TensorF32 use_pre = pre;
+  if (use_pre.data.size() < static_cast<std::size_t>(batch) * static_cast<std::size_t>(out) ||
+      use_pre.shape.size() != 2) {
+    use_pre = TensorF32::zeros(batch, out);
+  }
+  TensorF32 gx;
+  if (auto st = backward_f32(layer, projected, input, use_pre, &gx, dw); !st) return st;
+  return Status::Ok();
+}
+
 Status apply_grad_sgd(Layer* layer, const TensorF32& dW, double lr) {
   if (!layer) {
     return Status::Err(StatusCode::InvalidArgument, "dense: nil SGD layer");
