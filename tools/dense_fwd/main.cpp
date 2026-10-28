@@ -48,6 +48,7 @@
 //   STKB — Stack NestedStack-of-Dense NormalBP leaf → STKO; --bench → WVB1
 //   STKV — Volume Stack NestedStack-of-Dense NormalBP → STVO; --bench → WVB1
 //   STB1 — Line StepBP FamilyBP → STBO; --bench → WVB1
+//   STS1 — Line StepTweenSplit FamilyTweenSplit → STSO; --bench → WVB1
 //   MBP1 — Dense mesh-clock MeshBP → MBPO; --bench → WVB1
 //   MGB1 — Heterogeneous mesh-clock MeshBP → MGBO; --bench → WVB1
 //   MBB1/MBV1 Mamba; MCB1/MCV1 Meta; GDB1/GDV1 GDN; KMB1/KMV1 KMeans;
@@ -1304,6 +1305,8 @@ int main(int argc, char** argv) {
   if (std::memcmp(magic, "STKB", 4) == 0) return run_stack_normalbp(bench_iters);
   if (std::memcmp(magic, "STKV", 4) == 0) return run_volume_stack_normalbp(bench_iters);
   if (std::memcmp(magic, "STB1", 4) == 0) return run_stepbp(bench_iters);
+  if (std::memcmp(magic, "STS1", 4) == 0)
+    return run_stepbp(bench_iters, welvet::runtime::line::Credit::FamilyTweenSplit, "STSO");
   if (std::memcmp(magic, "TWB1", 4) == 0) return run_tween_leaf(bench_iters);
   if (std::memcmp(magic, "TWV1", 4) == 0) return run_volume_normalbp(bench_iters, VolumeTrainMode::Tween);
   if (std::memcmp(magic, "TRV1", 4) == 0) return run_volume_rmsnorm_normalbp(bench_iters, VolumeTrainMode::Tween);

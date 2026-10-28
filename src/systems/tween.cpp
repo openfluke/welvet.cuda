@@ -27,9 +27,11 @@
 #include "welvet/parallel.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <limits>
 #include <string>
+#include <vector>
 
 namespace welvet::systems::tween {
 namespace {
@@ -208,6 +210,151 @@ Status collect_dense(dense::Layer& dense, const TensorF32& input,
   return Status::Ok();
 }
 
+// Rebuild Parallel output from already-collected branch posts (Go combineCollected /
+// Metal combine_collected). Filter keeps a second child_forward.
+Status combine_collected(const stack::Child& child, const std::vector<TensorF32>& posts,
+                         TensorF32* output) {
+  if (!output || posts.empty())
+    return Status::Err(StatusCode::InvalidArgument, "tween: empty Parallel combine");
+  const auto& nest = child.parallel_nest;
+  const auto combine = static_cast<parallel::Combine>(nest.combine);
+  const int nb = static_cast<int>(posts.size());
+  if (combine == parallel::Combine::Concat) {
+    const int rows = posts[0].shape.empty() ? 1 : static_cast<int>(posts[0].shape[0]);
+    std::vector<int> feats(static_cast<std::size_t>(nb));
+    int od = 0;
+    for (int i = 0; i < nb; ++i) {
+      if (rows <= 0 || posts[static_cast<std::size_t>(i)].data.size() %
+                            static_cast<std::size_t>(rows))
+        return Status::Err(StatusCode::InvalidArgument, "tween: Parallel concat shape");
+      feats[static_cast<std::size_t>(i)] =
+          static_cast<int>(posts[static_cast<std::size_t>(i)].data.size()) / rows;
+      od += feats[static_cast<std::size_t>(i)];
+    }
+    output->shape = {rows, od};
+    output->data.assign(static_cast<std::size_t>(rows * od), 0.0f);
+    for (int r = 0; r < rows; ++r) {
+      int off = r * od;
+      for (int i = 0; i < nb; ++i) {
+        const int f = feats[static_cast<std::size_t>(i)];
+        const int src = r * f;
+        const auto& o = posts[static_cast<std::size_t>(i)];
+        for (int j = 0; j < f; ++j) {
+          output->data[static_cast<std::size_t>(off + j)] =
+              o.data[static_cast<std::size_t>(src + j)];
+        }
+        off += f;
+      }
+    }
+    return Status::Ok();
+  }
+  const int n = static_cast<int>(posts[0].data.size());
+  for (const auto& o : posts) {
+    if (static_cast<int>(o.data.size()) != n)
+      return Status::Err(StatusCode::InvalidArgument, "tween: unequal Parallel widths");
+  }
+  output->shape = posts[0].shape;
+  output->data.assign(static_cast<std::size_t>(n), 0.0f);
+  switch (combine) {
+  case parallel::Combine::Add:
+    for (const auto& o : posts)
+      for (int j = 0; j < n; ++j)
+        output->data[static_cast<std::size_t>(j)] += o.data[static_cast<std::size_t>(j)];
+    return Status::Ok();
+  case parallel::Combine::Avg: {
+    const float inv = static_cast<float>(1.0 / static_cast<double>(nb));
+    for (const auto& o : posts)
+      for (int j = 0; j < n; ++j)
+        output->data[static_cast<std::size_t>(j)] += o.data[static_cast<std::size_t>(j)];
+    for (int j = 0; j < n; ++j) output->data[static_cast<std::size_t>(j)] *= inv;
+    return Status::Ok();
+  }
+  case parallel::Combine::Max:
+    for (int j = 0; j < n; ++j) {
+      float best = posts[0].data[static_cast<std::size_t>(j)];
+      for (int i = 1; i < nb; ++i) {
+        const float v = posts[static_cast<std::size_t>(i)].data[static_cast<std::size_t>(j)];
+        if (v > best) best = v;
+      }
+      output->data[static_cast<std::size_t>(j)] = best;
+    }
+    return Status::Ok();
+  case parallel::Combine::SparseK: {
+    parallel::Config cfg;
+    cfg.dim = nest.dim;
+    cfg.out_feat = nest.out_feat;
+    cfg.branches = nb;
+    cfg.combine = combine;
+    cfg.seq_len = nest.seq_len;
+    cfg.sparse_k = nest.sparse_k;
+    cfg.disagree_beta = nest.disagree_beta;
+    int k = parallel::sparse_k_eff(cfg);
+    if (k > nb) k = nb;
+    if (k <= 0) k = 1;
+    struct Scored {
+      int i;
+      double nrm;
+    };
+    std::vector<Scored> scores(static_cast<std::size_t>(nb));
+    for (int i = 0; i < nb; ++i) {
+      double s = 0.0;
+      for (int j = 0; j < n; ++j) {
+        const double v =
+            static_cast<double>(posts[static_cast<std::size_t>(i)].data[static_cast<std::size_t>(j)]);
+        s += v * v;
+      }
+      scores[static_cast<std::size_t>(i)] = {i, std::sqrt(s)};
+    }
+    std::sort(scores.begin(), scores.end(), [](const Scored& a, const Scored& b) {
+      if (a.nrm != b.nrm) return a.nrm > b.nrm;
+      return a.i < b.i;
+    });
+    const float inv = static_cast<float>(1.0 / static_cast<double>(k));
+    for (int t = 0; t < k; ++t) {
+      const auto& o = posts[static_cast<std::size_t>(scores[static_cast<std::size_t>(t)].i)];
+      for (int j = 0; j < n; ++j)
+        output->data[static_cast<std::size_t>(j)] += o.data[static_cast<std::size_t>(j)];
+    }
+    for (int j = 0; j < n; ++j) output->data[static_cast<std::size_t>(j)] *= inv;
+    return Status::Ok();
+  }
+  case parallel::Combine::Disagree: {
+    parallel::Config cfg;
+    cfg.dim = nest.dim;
+    cfg.out_feat = nest.out_feat;
+    cfg.branches = nb;
+    cfg.combine = combine;
+    cfg.seq_len = nest.seq_len;
+    cfg.sparse_k = nest.sparse_k;
+    cfg.disagree_beta = nest.disagree_beta;
+    const double beta = parallel::disagree_beta_eff(cfg);
+    const double inv = 1.0 / static_cast<double>(nb);
+    std::vector<double> mean(static_cast<std::size_t>(n), 0.0);
+    for (const auto& o : posts)
+      for (int j = 0; j < n; ++j)
+        mean[static_cast<std::size_t>(j)] +=
+            static_cast<double>(o.data[static_cast<std::size_t>(j)]) * inv;
+    if (nb == 2) {
+      for (int j = 0; j < n; ++j) {
+        const double a = static_cast<double>(posts[0].data[static_cast<std::size_t>(j)]);
+        const double b = static_cast<double>(posts[1].data[static_cast<std::size_t>(j)]);
+        output->data[static_cast<std::size_t>(j)] =
+            static_cast<float>(mean[static_cast<std::size_t>(j)] + beta * (a - b));
+      }
+    } else {
+      for (int j = 0; j < n; ++j) {
+        const double a0 = static_cast<double>(posts[0].data[static_cast<std::size_t>(j)]);
+        output->data[static_cast<std::size_t>(j)] = static_cast<float>(
+            mean[static_cast<std::size_t>(j)] + beta * (a0 - mean[static_cast<std::size_t>(j)]));
+      }
+    }
+    return Status::Ok();
+  }
+  default:
+    return Status::Err(StatusCode::InvalidArgument, "tween: unsupported Parallel combine");
+  }
+}
+
 Status collect_projected(stack::Child& child, const TensorF32& input,
                          std::vector<ProjectedLeaf>* leaves, TensorF32* output) {
   if (child.kind == stack::Kind::NestedStack) {
@@ -238,19 +385,21 @@ Status collect_projected(stack::Child& child, const TensorF32& input,
     return Status::Ok();
   }
   if (child.kind == stack::Kind::Parallel) {
-    // Collect every branch / gate leaf before any weight update. Then rebuild
-    // the Parallel output via child_forward so combine matches Go (branches
-    // re-run — same Filter double-forward contract as Metal).
+    // Collect every branch / gate leaf before any weight update. Non-Filter combines
+    // reuse those posts (Go combineCollected); Filter keeps the extra forward.
+    std::vector<TensorF32> posts(child.nested.size());
     for (size_t i = 0; i < child.nested.size(); ++i) {
-      TensorF32 branch_out;
-      if (auto st = collect_projected(child.nested[i], input, leaves, &branch_out); !st) return st;
+      if (auto st = collect_projected(child.nested[i], input, leaves, &posts[i]); !st) return st;
     }
     if (child.parallel_nest.has_gate) {
       TensorF32 gate_out;
       if (auto st = collect_dense(child.dense_op, input, leaves, &gate_out); !st) return st;
     }
-    TensorF32 pre;
-    return stack::child_forward(child, input, &pre, output);
+    if (child.parallel_nest.combine == static_cast<int32_t>(parallel::Combine::Filter)) {
+      TensorF32 pre;
+      return stack::child_forward(child, input, &pre, output);
+    }
+    return combine_collected(child, posts, output);
   }
   ProjectedLeaf leaf;
   leaf.child = &child;

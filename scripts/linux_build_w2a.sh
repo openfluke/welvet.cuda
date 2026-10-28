@@ -57,6 +57,7 @@ usage: $0 [flags]
   --tween-train       ModeTween TWB1/TWV1 + per-kind volumes (TestGoVCudaTweenTrain)
   --tweenchain-train  ModeTweenChain TCB1/TCV1 + per-kind volumes (TestGoVCudaTweenChainTrain)
   --tweensplit-train  ModeTweenSplit TSB1/TSP1 + per-kind volumes (TestGoVCudaTweenSplitTrain)
+  --steptweensplit-train  ModeStepTweenSplit STS1/STSO + TweenSplit volumes (TestGoVCudaStepTweenSplitTrain)
   --help
 EOF
 }
@@ -67,7 +68,7 @@ if [[ $# -gt 0 ]]; then
     --help|-h) usage; exit 0 ;;
     --smoke) MODE=smoke; shift ;;
     --gaps) MODE=gaps; shift ;;
-    --dense-fwd|--rmsnorm-fwd|--layernorm-fwd|--softmax-fwd|--swiglu-fwd|--embedding-fwd|--mha-fwd|--cnn-fwd|--convt-fwd|--rnn-fwd|--lstm-fwd|--sequential-fwd|--residual-fwd|--mamba-fwd|--metacognition-fwd|--gdn-fwd|--kmeans-fwd|--parallel-fwd|--seqmix-fwd|--leaf-fwd-all|--dense-train|--rmsnorm-train|--layernorm-train|--softmax-train|--swiglu-train|--embedding-train|--mha-train|--cnn-train|--convt-train|--rnn-train|--lstm-train|--sequential-train|--residual-train|--stack-train|--mamba-train|--metacognition-train|--gdn-train|--kmeans-train|--parallel-train|--normalbp-all|--stepbp-train|--meshbp-train|--tween-train|--tweenchain-train|--tweensplit-train)
+    --dense-fwd|--rmsnorm-fwd|--layernorm-fwd|--softmax-fwd|--swiglu-fwd|--embedding-fwd|--mha-fwd|--cnn-fwd|--convt-fwd|--rnn-fwd|--lstm-fwd|--sequential-fwd|--residual-fwd|--mamba-fwd|--metacognition-fwd|--gdn-fwd|--kmeans-fwd|--parallel-fwd|--seqmix-fwd|--leaf-fwd-all|--dense-train|--rmsnorm-train|--layernorm-train|--softmax-train|--swiglu-train|--embedding-train|--mha-train|--cnn-train|--convt-train|--rnn-train|--lstm-train|--sequential-train|--residual-train|--stack-train|--mamba-train|--metacognition-train|--gdn-train|--kmeans-train|--parallel-train|--normalbp-all|--stepbp-train|--meshbp-train|--tween-train|--tweenchain-train|--tweensplit-train|--steptweensplit-train)
       MODE="${1#--}"; shift ;;
     *)
       echo "unknown flag '$1'" >&2
@@ -158,4 +159,5 @@ case "$MODE" in
   tween-train) run_go_test '^TestGoVCudaTweenTrain$' ;;
   tweenchain-train) run_go_test '^TestGoVCudaTweenChainTrain$' ;;
   tweensplit-train) run_go_test '^TestGoVCudaTweenSplitTrain$' ;;
+  steptweensplit-train) run_go_test '^TestGoVCudaStepTweenSplitTrain$' ;;
 esac

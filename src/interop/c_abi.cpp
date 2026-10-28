@@ -51,8 +51,8 @@ welvet_status to_c(const welvet::Status& st) {
 extern "C" {
 
 const char* welvet_version(void) {
-  // ModeTweenSplit OpenSplitTape 1/N @ full lr (TestGoVCudaTweenSplitTrain) → board 56/100.
-  return "0.56";
+  // ModeStepTweenSplit Line FamilyTweenSplit STS1 (TestGoVCudaStepTweenSplitTrain) → board 57/100.
+  return "0.57";
 }
 
 const char* welvet_runtime_identity(void) {
