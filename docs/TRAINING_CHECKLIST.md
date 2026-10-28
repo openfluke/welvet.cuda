@@ -9,8 +9,8 @@ Canonical enum: Go `layers/parallel/train_mode.go` (`TrainMode`).
 and [`welvet.cpp/docs/TRAINING_CHECKLIST.md`](../../welvet.cpp/docs/TRAINING_CHECKLIST.md).
 Same cases / wires / column meanings; status here is **CUDA** only. metal/cpp checkmarks do **not** transfer credit.
 
-**Current engine:** `0.55` (leaf FormatNone forwards + NormalBP + StepBP + MeshBP + ModeTween + **ModeTweenChain signed** — **55 / 100** on the engine board).
-Leaf forward + NormalBP leaf/volume signed for all 23 layer kinds (+ seqmix metadata). `TestGoVCudaNormalBP` PASS. `TestGoVCudaStepBPTrain` PASS. `TestGoVCudaMeshBPTrain` PASS. `TestGoVCudaTweenTrain` PASS. `TestGoVCudaTweenChainTrain` PASS (130 groups). Remaining Tween* variants / CamSync remain open.
+**Current engine:** `0.56` (leaf FormatNone forwards + NormalBP + StepBP + MeshBP + ModeTween + ModeTweenChain + **ModeTweenSplit signed** — **56 / 100** on the engine board).
+Leaf forward + NormalBP leaf/volume signed for all 23 layer kinds (+ seqmix metadata). `TestGoVCudaNormalBP` PASS. `TestGoVCudaStepBPTrain` PASS. `TestGoVCudaMeshBPTrain` PASS. `TestGoVCudaTweenTrain` PASS. `TestGoVCudaTweenChainTrain` PASS. `TestGoVCudaTweenSplitTrain` PASS (131 groups). Remaining Tween* variants / CamSync remain open.
 
 ---
 
@@ -84,7 +84,7 @@ Not signed yet. Same scope as welvet.metal when the CUDA path lands: Freeze/Shad
 | MSE / MSEGrad | ✅ host f64 match Go (Dense NormalBP) |
 | SGD and native storage updates | ✅ FormatNone Dense SGD |
 | GDN | ✅ f32 truncated-BPTT NormalBP leaf+vol |
-| Tween / TweenChain / Split / Alt / proxy / mesh variants | 🚧 StepBP + heterogeneous MeshBP signed; Tween* modes open |
+| Tween / TweenChain / Split / Alt / proxy / mesh variants | 🚧 ModeTween + ModeTweenChain + ModeTweenSplit signed; remaining Tween* open |
 | Scheduling and data movement | Host validation, scheduling, allocation, copies and storage staging (permitted) |
 | GPU-only enforcement | M0 host scaffold only; numerical CUDA-only gate lands with first training suites |
 
@@ -606,7 +606,6 @@ remain open; benchmark timings include fixture reset.
 ## w2a Go↔CUDA (TweenSplit ModeTweenSplit) — sign-off evidence
 
 Run: `./scripts/linux_build_w2a.sh --tweensplit-train`.
-The runner includes TweenSplit, ModeTween, TweenAlt and CUDA-only regressions.
 `TestGoVCudaTweenSplitTrain` contains **131 case groups**: the existing 80 plus
 51 KMeans/Parallel groups. Wires: `TSB1`/`TSBO`; existing per-kind Split volumes
 plus `KMSP`/`KMSO` and `PNSP`/`PNSO`.
@@ -618,15 +617,15 @@ input gradient is claimed for this mode.
 
 | Evidence | Status | Scope |
 |---|:---:|---|
-| All 23 supported families | [ ] | Native dtype sweeps for the 22 generic families; GDN Float32 only |
-| Both KMeans outputs | [ ] | Probabilities / Features, Float32 and ×34, including shape-changing KMeans→Dense |
-| Seven Parallel combines | [ ] | Float32 and ×34; Filter gate counts as a trainable leaf; Concat→Dense width changes |
-| Polymorphic Parallel | [ ] | All 23 branch kinds Float32, including nested Stack/Parallel and rank-4/rank-5 convolutional branches |
-| Stateful Filter | [ ] | Metacognition capture and gate update; complete tape before SGD |
-| Mixed weightless/trainable leaves | [ ] | Dense + Softmax Parallel followed by Dense ×34; Softmax excluded from N |
-| Shared volume credit | [ ] | All 23 families; KMeans/Parallel 111/chain/211 ×34 and 222 Float32 |
-| Benchmark reset | [ ] | Fresh loss/weights match measured runs; all new leaf and volume fixtures require exact CUDA replay across at least two iterations |
-| Collect primitives | [ ] | Existing hand-calculated 1/N sharing and tape preservation guards |
+| All 23 supported families | [x] | Native dtype sweeps for the 22 generic families; GDN Float32 only |
+| Both KMeans outputs | [x] | Probabilities / Features, Float32 and ×34, including shape-changing KMeans→Dense |
+| Seven Parallel combines | [x] | Float32 and ×34; Filter gate counts as a trainable leaf; Concat→Dense width changes |
+| Polymorphic Parallel | [x] | All 23 branch kinds Float32, including nested Stack/Parallel and rank-4/rank-5 convolutional branches |
+| Stateful Filter | [x] | Metacognition capture and gate update; complete tape before SGD |
+| Mixed weightless/trainable leaves | [x] | Dense + Softmax Parallel followed by Dense ×34; Softmax excluded from N |
+| Shared volume credit | [x] | All 23 families; KMeans/Parallel 111/chain/211 ×34 and 222 Float32 |
+| Benchmark reset | [x] | Fresh loss/weights match measured runs; all new leaf and volume fixtures require exact CUDA replay across at least two iterations |
+| Collect primitives | [x] | Existing hand-calculated 1/N sharing and tape preservation guards |
 
 Parallel leaf-mode Split recursively collects trainable branches, nested
 containers, Sequential/Residual Dense leaves and the Filter gate. It reuses
@@ -643,9 +642,8 @@ documented FP32 subnormal policy. GDN leaf/Parallel branch weights retain
 weakened. Other Split/Alt modes retain their separate sign-off sections. Full
 residency and throughput tuning remain separate work.
 
-**Status:** ⬜ not signed yet (CUDA).
-combined run also passed 130 ModeTween groups, 80 TweenAlt groups and CUDA-only
-guards in 191.609 seconds. Shared/static builds passed.
+**Status:** ✅ ModeTweenSplit signed (CUDA). All 131 TweenSplit groups passed in
+775.850 seconds under the existing precision gates.
 
 ## w2a Go↔CUDA (StepTweenSplit ModeStepTweenSplit) — sign-off evidence
 
@@ -1267,34 +1265,31 @@ CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures. Softmax weightless (N may 
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [ ] | [ ] | |
-| Residual | [ ] | [ ] | [ ] | |
-| KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
-| Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 0.56 |
+| RMSNorm | [x] | [x] | [x] | 0.56 |
+| LayerNorm | [x] | [x] | [x] | 0.56 |
+| SwiGLU | [x] | [x] | [x] | 0.56 |
+| Softmax | [x] | [x] | [x] | 0.56 |
+| Embedding | [x] | [x] | [x] | 0.56 |
+| MHA | [x] | [x] | [x] | 0.56 |
+| CNN1 | [x] | [x] | [x] | 0.56 |
+| CNN2 | [x] | [x] | [x] | 0.56 |
+| CNN3 | [x] | [x] | [x] | 0.56 |
+| ConvT1 | [x] | [x] | [x] | 0.56 |
+| ConvT2 | [x] | [x] | [x] | 0.56 |
+| ConvT3 | [x] | [x] | [x] | 0.56 |
+| RNN | [x] | [x] | [x] | 0.56 |
+| LSTM | [x] | [x] | [x] | 0.56 |
+| Sequential | [x] | [x] | [x] | 0.56 |
+| Residual | [x] | [x] | [x] | 0.56 |
+| KMeans | [x] | [x] | [x] | 0.56 |
+| Mamba | [x] | [x] | [x] | 0.56 |
+| Metacognition | [x] | [x] | [x] | 0.56 |
+| GDN | [x] | [x] | [x] | 0.56 |
+| Parallel | [x] | [x] | [x] | 0.56 |
+| Stack | [x] | [x] | [x] | 0.56 |
 
-**Checkpoint:** ⬜ not signed yet (CUDA).
-including both KMeans outputs and all seven Parallel combines. Native ×34
-sweeps cover the 22 dtype-generic families; GDN remains Float32-only. The 131
-TweenSplit groups passed in 72.47 seconds under the existing precision gates.
+**Checkpoint:** ✅ ModeTweenSplit signed (CUDA) — OpenSplitTape 1/N @ full lr; TSB1/TSP1 + per-kind volumes + KMeans/Parallel; 131 groups in 775.850s.
 
 Parallel leaf-mode Split counts all trainable branch leaves, nested Stack/Parallel
 leaves and its Filter gate before applying projected 1/N gaps at full lr. Softmax
@@ -1303,12 +1298,11 @@ stateful Filter's extra forward finish before any update. Split loss and targets
 use the collected output's native axes, matching Go `OpenSplitTape`.
 Placed KMeans/Parallel volume cells retain the existing local-unit grid contract.
 
-All 51 new groups passed, including 111/chain/211 ×34 and 222 Float32 volumes,
-all 23 polymorphic Parallel branch kinds, stateful Filter, native SGD and exact
-fresh-versus-measured replay with at least two iterations. Numerical work uses
-CUDA kernels; Go references stay in w2a. The combined TweenSplit/ModeTween/
-TweenAlt/CUDA-only runner passed in 191.609 seconds; shared/static builds passed.
-Other Split/Alt mode sign-offs remain separate.
+All 51 KMeans/Parallel groups passed, including 111/chain/211 ×34 and 222 Float32
+volumes, all 23 polymorphic Parallel branch kinds, stateful Filter, native SGD and
+exact fresh-versus-measured replay with at least two iterations. Numerical work
+uses CUDA kernels; Go references stay in w2a. Other Split/Alt mode sign-offs remain
+separate.
 
 ---
 

@@ -12,6 +12,7 @@
 #include "welvet/runtime/step.hpp"
 #include "welvet/runtime/training.hpp"
 #include "welvet/runtime/tween_chain_train.hpp"
+#include "welvet/runtime/tween_split_train.hpp"
 #include "welvet/runtime/tween_train.hpp"
 #include "welvet/stack.hpp"
 #include "welvet/systems/tween.hpp"
@@ -559,8 +560,9 @@ int run_mesh_generic_bp(int bench_iters, bool tween, const char* out_magic, int 
 
 int run_tween_leaf(int bench_iters, VolumeTrainMode mode) {
   const bool chain = mode == VolumeTrainMode::TweenChain;
-  const char* request = chain ? "TCB1" : "TWB1";
-  const char* response = chain ? "TCBO" : "TWBO";
+  const bool split = mode == VolumeTrainMode::TweenSplit;
+  const char* request = split ? "TSB1" : chain ? "TCB1" : "TWB1";
+  const char* response = split ? "TSBO" : chain ? "TCBO" : "TWBO";
   int32_t n_children = 0, n_ticks = 0, batch = 0;
   double lr = 0.0;
   if (!read_exact(&n_children, 1) || !read_exact(&n_ticks, 1) || !read_exact(&batch, 1) ||
@@ -618,6 +620,8 @@ int run_tween_leaf(int bench_iters, VolumeTrainMode mode) {
       if (!read_child(replay, &child))
         return welvet::Status::Err(welvet::StatusCode::Internal, "invalid Tween child replay");
     }
+    if (split)
+      return welvet::runtime::tween_split_train::train_stack_mse(stack, xin, target, lr, &loss);
     if (chain)
       return welvet::runtime::tween_chain_train::train_stack_mse(stack, xin, target, lr, &loss);
     return welvet::runtime::tween_train::train_stack_mse(stack, xin, target, lr, &loss);

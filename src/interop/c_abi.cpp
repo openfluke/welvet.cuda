@@ -51,8 +51,8 @@ welvet_status to_c(const welvet::Status& st) {
 extern "C" {
 
 const char* welvet_version(void) {
-  // NormalBP + StepBP + heterogeneous MeshBP (TestGoVCudaMeshBPTrain) → board 53/100.
-  return "0.55";
+  // ModeTweenSplit OpenSplitTape 1/N @ full lr (TestGoVCudaTweenSplitTrain) → board 56/100.
+  return "0.56";
 }
 
 const char* welvet_runtime_identity(void) {
