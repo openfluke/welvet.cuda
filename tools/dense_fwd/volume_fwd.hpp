@@ -79,6 +79,7 @@ int run_stepbp(int bench_iters,
                welvet::runtime::line::Credit credit = welvet::runtime::line::Credit::FamilyBP,
                const char* response = "STBO");
 int run_meshbp(int bench_iters);
+int run_meshtween(int bench_iters);
 int run_mesh_generic_bp(int bench_iters, bool tween = false, const char* out_magic = nullptr,
                         int proxy_volume = 0, int mesh_family = 0);
 

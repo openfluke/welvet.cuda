@@ -4,6 +4,10 @@
 #include "welvet/runtime/forward.hpp"
 #include "welvet/runtime/training.hpp"
 
+#include "welvet/systems/tween.hpp"
+#include "welvet/systems/tween_alt.hpp"
+#include "welvet/systems/tween_split.hpp"
+
 #include "welvet/kmeans.hpp"
 #include "welvet/parallel.hpp"
 
@@ -314,12 +318,46 @@ Status apply_sgd(architecture::Grid& g, const std::vector<TensorF32>& layer_dws,
   return Status::Ok();
 }
 
-// Local projected credits need systems::tween*; StepBP uses FamilyBP only.
-Status apply_credit(architecture::Grid& /*g*/, const State& /*s*/, const TensorF32& /*grad_out*/,
-                    double /*lr*/, Credit credit) {
-  return Status::Gap(std::string("runtime.step Credit ") +
-                     std::to_string(static_cast<int>(credit)) +
-                     " (unsupported mesh local credit on CUDA; FamilyBP only)");
+// Apply only the last captured clock tape; Tween does not traverse time.
+Status apply_credit(architecture::Grid& g, const State& s, const TensorF32& grad_out, double lr,
+                    Credit credit) {
+  if (int(credit) < 1 || int(credit) > int(Credit::FamilyTweenSplitSparse))
+    return Status::Gap("step: unsupported local credit");
+  if (credit == Credit::FamilyTweenSplitFastProxy || credit == Credit::FamilyTweenSplitSparse)
+    return Status::Gap(std::string("runtime.step Credit ") +
+                       std::to_string(static_cast<int>(credit)) +
+                       " (mesh proxy/sparse local credit not wired on CUDA)");
+  if (s.history_in.empty() || s.history_pre.empty() ||
+      s.history_in.back().size() != g.cells.size() ||
+      s.history_pre.back().size() != g.cells.size() || s.layer_data.size() != g.cells.size())
+    return Status::Err(StatusCode::InvalidArgument, "step: missing Tween clock tape");
+  if (lr == 0.0) return Status::Ok();
+  const auto& inputs = s.history_in.back();
+  const auto& pres = s.history_pre.back();
+  TensorF32 gap = grad_out;
+  for (int idx = int(g.cells.size()) - 1; idx >= 0; --idx) {
+    auto& cell = g.cells[size_t(idx)];
+    const auto& cin = inputs[size_t(idx)];
+    if (cell.meta.is_disabled || cin.data.empty() || pres[size_t(idx)].data.empty() ||
+        s.layer_data[size_t(idx)].data.empty())
+      continue;
+    Status rc = Status::Ok();
+    const auto& pre = pres[size_t(idx)];
+    const auto& post = s.layer_data[size_t(idx)];
+    if (credit == Credit::FamilyTweenSplit)
+      rc = systems::tween_split::apply_cell_split(cell, gap, cin, pre, post, lr);
+    else if (credit == Credit::FamilyTweenAlt)
+      rc = systems::tween_alt::apply_cell_alt(cell, gap, cin, pre, post, lr);
+    else
+      rc = systems::tween::apply_cell_projected(cell, gap, cin, pre, post, lr * 0.5);
+    if (!rc) return rc;
+    TensorF32 next;
+    next.shape = cin.shape;
+    next.data.assign(cin.data.size(), 0.0f);
+    if (gap.data.size() == next.data.size()) next.data = gap.data;
+    gap = std::move(next);
+  }
+  return Status::Ok();
 }
 
 Status apply_tween(architecture::Grid& g, const State& s, const TensorF32& gy, double lr) {

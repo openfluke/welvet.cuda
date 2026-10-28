@@ -247,6 +247,11 @@ int run_meshbp(int bench_iters) {
   return run_mesh_dense_train(bench_iters, welvet::runtime::step::Credit::FamilyBP, "MBP1", "MBPO");
 }
 
+int run_meshtween(int bench_iters) {
+  return run_mesh_dense_train(bench_iters, welvet::runtime::step::Credit::FamilyTween, "MTW1",
+                              "MTWO");
+}
+
 // MGB1: heterogeneous mesh-clock BPTT. All tensors, gradients and per-tick
 // snapshots are exported for w2a; no CPU numerical reference is linked here.
 namespace {

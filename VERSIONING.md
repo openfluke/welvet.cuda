@@ -17,6 +17,7 @@
 | **0.57** | ModeStepTweenSplit Line FamilyTweenSplit (`TestGoVCudaStepTweenSplitTrain`, 130 groups) |
 | **0.58** | ModeTweenAlt Split→Tween (`TestGoVCudaTweenAltTrain`, 130 groups) |
 | **0.59** | ModeStepTweenAlt Line FamilyTweenAlt (`TestGoVCudaStepTweenAltTrain`, 130 groups) |
+| **0.60** | MeshTween mesh-clock FamilyTween (`TestGoVCudaMeshTweenTrain`, 159 groups) |
 | **0.x** | `round(earned)` from the engine table in [README.md](README.md) |
 | **1.0.0** | Engine board **100/100** — full Go parity on NVIDIA GPU (FormatNone path + Model/IO + Systems + CamSync + peak fused, or explicit gate rewrite) |
 
