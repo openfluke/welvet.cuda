@@ -3,7 +3,7 @@
 **Authoritative checklist:** [README.md](README.md).  
 **Training detail:** [docs/TRAINING_CHECKLIST.md](docs/TRAINING_CHECKLIST.md).
 
-**Version `0.60`** — engine board **60 / 100**. Dump: `welvet_dense_fwd --gaps`.
+**Version `0.61`** — engine board **61 / 100**. Dump: `welvet_dense_fwd --gaps`.
 
 ```bash
 ./scripts/build_linux.sh
@@ -19,6 +19,7 @@
 ./scripts/linux_build_w2a.sh --tweenalt-train
 ./scripts/linux_build_w2a.sh --steptweenalt-train
 ./scripts/linux_build_w2a.sh --meshtween-train
+./scripts/linux_build_w2a.sh --meshtweenchain-train
 ```
 
 ## Done
@@ -38,9 +39,10 @@
 | **ModeTweenAlt** | TAB1/TAV1/per-kind/KMAL/PNAL — 130 groups — `TestGoVCudaTweenAltTrain` PASS |
 | **ModeStepTweenAlt** | STA1/STAO + TweenAlt volumes — 130 groups — `TestGoVCudaStepTweenAltTrain` PASS |
 | **MeshTween** | MTW1/MTWO + MGW1/MGWO + ModeTween volumes — 159 groups — `TestGoVCudaMeshTweenTrain` PASS |
+| **MeshTweenChain** | MTC1/MTCO + MGC1/MGCO ≡ MeshBP FamilyBP — 160 groups — `TestGoVCudaMeshTweenChainTrain` PASS |
 
 ## Open
 
-Remaining Tween* (MeshTweenChain/proxy/StepTween/MeshSplit…) / CamSync / Freeze/Shadow / other systems / model / lucy / peak fused / NAC / Windows / packed quants. See README.
+Remaining Tween* (proxy/StepTween/MeshSplit…) / CamSync / Freeze/Shadow / other systems / model / lucy / peak fused / NAC / Windows / packed quants. See README.
 
 Live counters: `./build/welvet_dense_fwd --gaps`.

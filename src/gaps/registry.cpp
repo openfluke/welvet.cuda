@@ -113,6 +113,8 @@ const std::vector<Entry>& build() {
       {"runtime.step.family_tween", "runtime",
        "MeshTween last-tick local credit (MTW1/MTWO, MGW1/MGWO; apply_cell_projected @ lr×0.5)",
        true},
+      {"runtime.step.meshtweenchain", "runtime",
+       "MeshTweenChain ≡ MeshBP FamilyBP alias (MTC1/MTCO, MGC1/MGCO)", true},
       {"systems.dna", "systems", "gap? DNA", false},
       {"systems.evolution", "systems", "gap? evolution", false},
       {"systems.tanhi", "systems", "gap? TANHI", false},

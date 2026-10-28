@@ -252,6 +252,11 @@ int run_meshtween(int bench_iters) {
                               "MTWO");
 }
 
+int run_meshtweenchain(int bench_iters) {
+  // MeshTweenChain ≡ MeshBP FamilyBP under mesh clock (alias wire name only).
+  return run_mesh_dense_train(bench_iters, welvet::runtime::step::Credit::FamilyBP, "MTC1", "MTCO");
+}
+
 // MGB1: heterogeneous mesh-clock BPTT. All tensors, gradients and per-tick
 // snapshots are exported for w2a; no CPU numerical reference is linked here.
 namespace {

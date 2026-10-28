@@ -53,8 +53,10 @@
 //   STA1 — Line StepTweenAlt FamilyTweenAlt → STAO; --bench → WVB1
 //   MBP1 — Dense mesh-clock MeshBP → MBPO; --bench → WVB1
 //   MTW1 — Dense mesh-clock MeshTween FamilyTween → MTWO; --bench → WVB1
+//   MTC1 — Dense mesh-clock MeshTweenChain FamilyBP → MTCO; --bench → WVB1
 //   MGB1 — Heterogeneous mesh-clock MeshBP → MGBO; --bench → WVB1
 //   MGW1 — Heterogeneous mesh-clock MeshTween → MGWO; --bench → WVB1
+//   MGC1 — Heterogeneous mesh-clock MeshTweenChain → MGCO; --bench → WVB1
 //   MBB1/MBV1 Mamba; MCB1/MCV1 Meta; GDB1/GDV1 GDN; KMB1/KMV1 KMeans;
 //   PNB1/PNV1 Parallel; PPB1 poly; NBL1 edges
 
@@ -1411,8 +1413,10 @@ int main(int argc, char** argv) {
   if (std::memcmp(magic, "PNAL", 4) == 0) return run_volume_parallel_normalbp(bench_iters, VolumeTrainMode::TweenAlt);
   if (std::memcmp(magic, "MBP1", 4) == 0) return run_meshbp(bench_iters);
   if (std::memcmp(magic, "MTW1", 4) == 0) return run_meshtween(bench_iters);
+  if (std::memcmp(magic, "MTC1", 4) == 0) return run_meshtweenchain(bench_iters);
   if (std::memcmp(magic, "MGB1", 4) == 0) return run_mesh_generic_bp(bench_iters);
   if (std::memcmp(magic, "MGW1", 4) == 0) return run_mesh_generic_bp(bench_iters, true);
+  if (std::memcmp(magic, "MGC1", 4) == 0) return run_mesh_generic_bp(bench_iters, false, "MGCO");
   if (std::memcmp(magic, "MBB1", 4) == 0) return run_mamba_normalbp(bench_iters);
   if (std::memcmp(magic, "MBV1", 4) == 0) return run_volume_mamba_normalbp(bench_iters);
   if (std::memcmp(magic, "MCB1", 4) == 0) return run_metacognition_normalbp(bench_iters);

@@ -9,7 +9,7 @@ Canonical enum: Go `layers/parallel/train_mode.go` (`TrainMode`).
 and [`welvet.cpp/docs/TRAINING_CHECKLIST.md`](../../welvet.cpp/docs/TRAINING_CHECKLIST.md).
 Same cases / wires / column meanings; status here is **CUDA** only. metal/cpp checkmarks do **not** transfer credit.
 
-**Current engine:** `0.60` (leaf FormatNone forwards + NormalBP + StepBP + MeshBP + ModeTween + ModeTweenChain + ModeTweenSplit + ModeStepTweenSplit + ModeTweenAlt + ModeStepTweenAlt + **MeshTween signed** — **60 / 100** on the engine board).
+**Current engine:** `0.61` (leaf FormatNone forwards + NormalBP + StepBP + MeshBP + ModeTween + ModeTweenChain + ModeTweenSplit + ModeStepTweenSplit + ModeTweenAlt + ModeStepTweenAlt + MeshTween + **MeshTweenChain signed** — **61 / 100** on the engine board).
 Leaf forward + NormalBP leaf/volume signed for all 23 layer kinds (+ seqmix metadata). `TestGoVCudaNormalBP` PASS. `TestGoVCudaStepBPTrain` PASS. `TestGoVCudaMeshBPTrain` PASS. `TestGoVCudaTweenTrain` PASS. `TestGoVCudaTweenChainTrain` PASS. `TestGoVCudaTweenSplitTrain` PASS. `TestGoVCudaStepTweenSplitTrain` PASS. `TestGoVCudaTweenAltTrain` PASS. `TestGoVCudaStepTweenAltTrain` PASS. `TestGoVCudaMeshTweenTrain` PASS (159 groups). Remaining Tween* variants / CamSync remain open.
 
 ---
@@ -84,7 +84,7 @@ Not signed yet. Same scope as welvet.metal when the CUDA path lands: Freeze/Shad
 | MSE / MSEGrad | ✅ host f64 match Go (Dense NormalBP) |
 | SGD and native storage updates | ✅ FormatNone Dense SGD |
 | GDN | ✅ f32 truncated-BPTT NormalBP leaf+vol |
-| Tween / TweenChain / Split / Alt / proxy / mesh variants | 🚧 ModeTween + ModeTweenChain + ModeTweenSplit + ModeStepTweenSplit + ModeTweenAlt + ModeStepTweenAlt + MeshTween signed; remaining Tween* open |
+| Tween / TweenChain / Split / Alt / proxy / mesh variants | 🚧 ModeTween + ModeTweenChain + ModeTweenSplit + ModeStepTweenSplit + ModeTweenAlt + ModeStepTweenAlt + MeshTween + MeshTweenChain signed; remaining Tween* open |
 | Scheduling and data movement | Host validation, scheduling, allocation, copies and storage staging (permitted) |
 | GPU-only enforcement | M0 host scaffold only; numerical CUDA-only gate lands with first training suites |
 
@@ -767,16 +767,16 @@ no separate numerical implementation or CPU fallback.
 
 | Evidence | Status | Scope |
 |---|:---:|---|
-| All 23 actual node kinds | [ ] | 111 / 211 ×34 for 22 dtype-generic families; GDN Float32 only; all 23 at 222 Float32 |
-| Recurrent remote clock | [ ] | 22 shape-preserving families; detached warmup then captured ticks |
-| KMeans output modes | [ ] | Probabilities / Features ×34 with real Dense adapter nodes |
-| Parallel combines | [ ] | All seven ×34, including Filter gate gradients and Concat shape changes |
-| Captured tensors and gradients | [ ] | Every tick/node input, pre and post; final output/loss, oldest input gradient and packed accumulated parameter gradients |
-| Full-rate native SGD | [ ] | Updated weights for every enabled node; Dense/KMeans/Parallel zero-lr preservation ×34 |
-| Exact replay | [ ] | Fresh CUDA result equals at least two measured repetitions across all exported tensors, weights, tapes and loss |
-| MeshBP equivalence | [ ] | Independent MeshBP and MeshTweenChain wire calls agree exactly for all 23 families at 211 Float32 |
-| Shared volume credit | [ ] | All 23 families, including KMeans/Parallel 111/chain/211 ×34 and 222 Float32 |
-| Credit primitive | [ ] | Existing hand-calculated test distinguishes full-rate BPTT from last-tick half-rate MeshTween |
+| All 23 actual node kinds | [x] | 111 / 211 ×34 for 22 dtype-generic families; GDN Float32 only; all 23 at 222 Float32 |
+| Recurrent remote clock | [x] | 22 shape-preserving families; detached warmup then captured ticks |
+| KMeans output modes | [x] | Probabilities / Features ×34 with real Dense adapter nodes |
+| Parallel combines | [x] | All seven ×34, including Filter gate gradients and Concat shape changes |
+| Captured tensors and gradients | [x] | Every tick/node input, pre and post; final output/loss, oldest input gradient and packed accumulated parameter gradients |
+| Full-rate native SGD | [x] | Updated weights for every enabled node; Dense/KMeans/Parallel zero-lr preservation ×34 |
+| Exact replay | [x] | Fresh CUDA result equals at least two measured repetitions across all exported tensors, weights, tapes and loss |
+| MeshBP equivalence | [x] | Independent MeshBP and MeshTweenChain wire calls agree exactly for all 23 families at 211 Float32 |
+| Shared volume credit | [x] | All 23 families, including KMeans/Parallel 111/chain/211 ×34 and 222 Float32 |
+| Credit primitive | [x] | Existing hand-calculated test distinguishes full-rate BPTT from last-tick half-rate MeshTween |
 
 The existing precision policy applies: finite loss band; exact/subnormal tensor
 and weight gates where specified; MHA gradients ≥strict, Softmax gradients ≥loose;
@@ -788,9 +788,8 @@ ingress plus RMSNorm adapter nodes in grids. SwiGLU uses the bounded recurrent
 trajectory from section 7. These are correctness fixtures; full residency and
 throughput tuning retain separate gates.
 
-**Status:** ⬜ not signed yet (CUDA).
-The combined runner also passed 159 MeshTween groups, 130 ModeTweenChain groups
-and CUDA-only guards in 321.915 seconds. Shared/static builds passed.
+**Status:** ✅ MeshTweenChain signed (CUDA). All 160 groups passed in 1555.46s.
+Combined runner (MeshTweenChain + MeshTween + ModeTweenChain) passed in 3826.581s.
 
 ## w2a Go↔CUDA (StepTween ModeStepTween) — sign-off evidence
 
@@ -1179,37 +1178,36 @@ Ship: `runtime/step` `Credit::FamilyBP` under mesh clock (`MGC1`/`MGCO`, existin
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [ ] | [ ] | |
-| Residual | [ ] | [ ] | [ ] | |
-| KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
-| Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 0.61 |
+| RMSNorm | [x] | [x] | [x] | 0.61 |
+| LayerNorm | [x] | [x] | [x] | 0.61 |
+| SwiGLU | [x] | [x] | [x] | 0.61 |
+| Softmax | [x] | [x] | [x] | 0.61 |
+| Embedding | [x] | [x] | [x] | 0.61 |
+| MHA | [x] | [x] | [x] | 0.61 |
+| CNN1 | [x] | [x] | [x] | 0.61 |
+| CNN2 | [x] | [x] | [x] | 0.61 |
+| CNN3 | [x] | [x] | [x] | 0.61 |
+| ConvT1 | [x] | [x] | [x] | 0.61 |
+| ConvT2 | [x] | [x] | [x] | 0.61 |
+| ConvT3 | [x] | [x] | [x] | 0.61 |
+| RNN | [x] | [x] | [x] | 0.61 |
+| LSTM | [x] | [x] | [x] | 0.61 |
+| Sequential | [x] | [x] | [x] | 0.61 |
+| Residual | [x] | [x] | [x] | 0.61 |
+| KMeans | [x] | [x] | [x] | 0.61 |
+| Mamba | [x] | [x] | [x] | 0.61 |
+| Metacognition | [x] | [x] | [x] | 0.61 |
+| GDN | [x] | [x] | [x] | 0.61 |
+| Parallel | [x] | [x] | [x] | 0.61 |
+| Stack | [x] | [x] | [x] | 0.61 |
 
-**Status:** ⬜ not signed yet (CUDA).
-ModeTweenChain/CUDA-only runner passed in 321.915 seconds. Shared and static
-builds passed.
+**Status:** ✅ MeshTweenChain signed (CUDA). All 160 groups passed in 1555.46s.
+Combined runner (MeshTweenChain + MeshTween + ModeTweenChain) passed in 3826.581s.
 
-**Checkpoint:** ⬜ not signed yet (CUDA).
-including KMeans and Parallel. All 160 MeshTweenChain groups passed in 134.60
-seconds. The 22 dtype-generic families cover 111/211 ×34; GDN is Float32-only.
+**Checkpoint:** ✅ MeshTweenChain signed (CUDA) — FamilyBP BPTT+SGD under mesh clock;
+MTC1/MTCO + MGC1/MGCO ≡ MeshBP; ModeTweenChain volumes; 160 groups in 1555.46s.
+The 22 dtype-generic families cover 111/211 ×34; GDN is Float32-only.
 All 23 cover 222 Float32. Existing shared-volume gates retain their floors.
 
 Clock evidence includes every tick/node input, pre and post; final loss/output;
@@ -1996,6 +1994,12 @@ Run: `./scripts/linux_build_w2a.sh --training-25-29-all`.
 | **0.53** | Heterogeneous MeshBP (`MGB1`/`MGBO`) all 23 families — 103 clock groups; `TestGoVCudaMeshBPTrain` PASS (~1356s @ BENCH_ITERS=1). Engine board **53 / 100**. |
 | **0.54** | ModeTween (`TWB1`/`TWV1`/per-kind/`KMTV`/`PNTV`) — 130 groups; `TestGoVCudaTweenTrain` PASS (~717s @ BENCH_ITERS=1). Engine board **54 / 100**. |
 | **0.55** | ModeTweenChain (`TCB1`/`TCV1`/per-kind/`KMTC`/`PNTC`) — 130 groups; `TestGoVCudaTweenChainTrain` PASS (~742s @ BENCH_ITERS=1). Engine board **55 / 100**. |
+| **0.56** | ModeTweenSplit (`TSB1`/`TSP1`/per-kind) — 131 groups; `TestGoVCudaTweenSplitTrain` PASS. Engine board **56 / 100**. |
+| **0.57** | ModeStepTweenSplit Line FamilyTweenSplit (`STS1`/`STSO`) — 130 groups; `TestGoVCudaStepTweenSplitTrain` PASS. Engine board **57 / 100**. |
+| **0.58** | ModeTweenAlt (`TAB1`/`TAV1`/per-kind) — 130 groups; `TestGoVCudaTweenAltTrain` PASS. Engine board **58 / 100**. |
+| **0.59** | ModeStepTweenAlt Line FamilyTweenAlt (`STA1`/`STAO`) — 130 groups; `TestGoVCudaStepTweenAltTrain` PASS. Engine board **59 / 100**. |
+| **0.60** | MeshTween mesh-clock FamilyTween (`MTW1`/`MGW1`) — 159 groups; `TestGoVCudaMeshTweenTrain` PASS (~1552s @ BENCH_ITERS=1). Engine board **60 / 100**. |
+| **0.61** | MeshTweenChain (`MTC1`/`MTCO`, `MGC1`/`MGCO` ≡ MeshBP FamilyBP) — 160 groups; `TestGoVCudaMeshTweenChainTrain` PASS (~1555s @ BENCH_ITERS=1). Engine board **61 / 100**. |
 | | Tick rows + bump version as w2a `go_v_cuda` suites pass. |
 
 ## Mixed Go / C++ / CUDA routing — sign-off evidence
