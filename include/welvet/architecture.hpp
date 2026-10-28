@@ -94,6 +94,7 @@ struct Cell {
 
   bool is_remote_link = false;
   int target_z = 0, target_y = 0, target_x = 0, target_l = 0;
+  stack::SplitAccel accel{}; // LinearCache / HeadProxyAsync / Sparse (Stack/Parallel cells)
 };
 
 struct Grid {
@@ -102,6 +103,7 @@ struct Grid {
   int cols = 1;
   int layers_per_cell = 1;
   std::vector<Cell> cells;
+  stack::SplitAccel accel{}; // volume proxy LinearCache / Async / Sparse
 };
 
 Grid new_grid(int depth, int rows, int cols, int layers_per_cell);

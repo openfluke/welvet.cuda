@@ -9,8 +9,8 @@ Canonical enum: Go `layers/parallel/train_mode.go` (`TrainMode`).
 and [`welvet.cpp/docs/TRAINING_CHECKLIST.md`](../../welvet.cpp/docs/TRAINING_CHECKLIST.md).
 Same cases / wires / column meanings; status here is **CUDA** only. metal/cpp checkmarks do **not** transfer credit.
 
-**Current engine:** `0.66` (… + HeadProxy + Linear + **ModeTweenSplitFastProxy signed** — **66 / 100** on the engine board).
-Prior mode suites PASS. `TestGoVCudaProxyTrain` / `ProxyVolumeTrain` PASS for HeadProxy + Linear + FastProxy (65 leaf + 69 volume each). Remaining Tween* variants / CamSync remain open.
+**Current engine:** `0.67` (… + HeadProxy + Linear + FastProxy + **ModeTweenSplitLinearCache signed** — **67 / 100** on the engine board).
+Prior mode suites PASS. ProxyTrain/ProxyVolume PASS through LinearCache (88 leaf + 92 volume incl. epoch-22 refresh). Remaining Tween* variants / CamSync remain open.
 
 ---
 
@@ -1499,37 +1499,37 @@ Wires: `GPB1`/`GPBO` (variant 3); `PGB1`/`PGVO` for actual-type volumes. Tests: 
 
 ## 17 — TweenSplitLinearCache
 
-Linear credit refreshes every 20 epochs. Intervening updates reuse cached projections rescaled by live/cached gap norms; GPU kernels compute norms and rescaling. The tests cross the refresh boundary with 22 epochs.
+Linear credit refreshes every 20 epochs. Intervening updates reuse cached projections rescaled by live/cached gap norms. The tests cross the refresh boundary with 22 epochs.
 
 Wires: `GPB1`/`GPBO` (variant 4); `PGB1`/`PGVO` for actual-type volumes. Tests: `TestGoVCudaProxyTrain` and `TestGoVCudaProxyVolumeTrain`. The leaf matrix covers all 23 families and KMeans/Parallel variants; volume matrices cover 111/211 supported native dtypes and 222 Float32. GDN is Float32 only.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [ ] | [ ] | |
-| Residual | [ ] | [ ] | [ ] | |
-| KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
-| Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 0.67 |
+| RMSNorm | [x] | [x] | [x] | 0.67 |
+| LayerNorm | [x] | [x] | [x] | 0.67 |
+| SwiGLU | [x] | [x] | [x] | 0.67 |
+| Softmax | [x] | [x] | [x] | 0.67 |
+| Embedding | [x] | [x] | [x] | 0.67 |
+| MHA | [x] | [x] | [x] | 0.67 |
+| CNN1 | [x] | [x] | [x] | 0.67 |
+| CNN2 | [x] | [x] | [x] | 0.67 |
+| CNN3 | [x] | [x] | [x] | 0.67 |
+| ConvT1 | [x] | [x] | [x] | 0.67 |
+| ConvT2 | [x] | [x] | [x] | 0.67 |
+| ConvT3 | [x] | [x] | [x] | 0.67 |
+| RNN | [x] | [x] | [x] | 0.67 |
+| LSTM | [x] | [x] | [x] | 0.67 |
+| Sequential | [x] | [x] | [x] | 0.67 |
+| Residual | [x] | [x] | [x] | 0.67 |
+| KMeans | [x] | [x] | [x] | 0.67 |
+| Mamba | [x] | [x] | [x] | 0.67 |
+| Metacognition | [x] | [x] | [x] | 0.67 |
+| GDN | [x] | [x] | [x] | 0.67 |
+| Parallel | [x] | [x] | [x] | 0.67 |
+| Stack | [x] | [x] | [x] | 0.67 |
 
-**Checkpoint:** ⬜ not signed yet (CUDA).
+**Checkpoint:** ✅ `TestGoVCudaProxyTrain/TweenSplitLinearCache` PASS (88 groups, ~563s @ BENCH_ITERS=1); `TestGoVCudaProxyVolumeTrain/TweenSplitLinearCache` PASS (92 groups, ~747s @ BENCH_ITERS=1).
 
 ---
 
@@ -2007,6 +2007,7 @@ Run: `./scripts/linux_build_w2a.sh --training-25-29-all`.
 | **0.64** | ModeTweenSplitHeadProxy (`GPB1`/`GPBO` + `PGB1`/`PGVO` variant 1) — 65 leaf + 69 volume; `TestGoVCudaProxyTrain`/`ProxyVolumeTrain` PASS (~548s / ~728s @ BENCH_ITERS=1). Engine board **64 / 100**. |
 | **0.65** | ModeTweenSplitLinear (`GPB1`/`GPBO` + `PGB1`/`PGVO` variant 2; reverse walk 1/N + LinearGradIn) — 65 leaf + 69 volume; PASS (~548s / ~733s @ BENCH_ITERS=1). Engine board **65 / 100**. |
 | **0.66** | ModeTweenSplitFastProxy (`GPB1`/`GPBO` + `PGB1`/`PGVO` variant 3; linear head proxy then hidden 1/(N−1)) — 65 leaf + 69 volume; PASS (~546s / ~729s @ BENCH_ITERS=1). Engine board **66 / 100**. |
+| **0.67** | ModeTweenSplitLinearCache (`GPB1`/`GPBO` + `PGB1`/`PGVO` variant 4; refresh every 20) — 88 leaf + 92 volume; PASS (~563s / ~747s @ BENCH_ITERS=1). Engine board **67 / 100**. |
 | | Tick rows + bump version as w2a `go_v_cuda` suites pass. |
 
 ## Mixed Go / C++ / CUDA routing — sign-off evidence

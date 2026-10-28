@@ -24,6 +24,7 @@
 | **0.64** | ModeTweenSplitHeadProxy (`TestGoVCudaProxyTrain` 65 + `TestGoVCudaProxyVolumeTrain` 69) |
 | **0.65** | ModeTweenSplitLinear (`TestGoVCudaProxyTrain` 65 + `TestGoVCudaProxyVolumeTrain` 69) |
 | **0.66** | ModeTweenSplitFastProxy (`TestGoVCudaProxyTrain` 65 + `TestGoVCudaProxyVolumeTrain` 69) |
+| **0.67** | ModeTweenSplitLinearCache (`TestGoVCudaProxyTrain` 88 + `TestGoVCudaProxyVolumeTrain` 92) |
 | **0.x** | `round(earned)` from the engine table in [README.md](README.md) |
 | **1.0.0** | Engine board **100/100** — full Go parity on NVIDIA GPU (FormatNone path + Model/IO + Systems + CamSync + peak fused, or explicit gate rewrite) |
 

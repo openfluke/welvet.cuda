@@ -28,6 +28,7 @@
 #include "welvet/stack.hpp"
 #include "welvet/swiglu.hpp"
 
+#include <cmath>
 #include <string>
 #include <utility>
 #include <vector>
@@ -554,9 +555,71 @@ Status apply_fast_proxy_leaves(std::vector<Leaf>& leaves, const TensorF32& grad_
   return apply_hidden_dw_only(leaves, 0, n - 1, src, scale, lr);
 }
 
+double gap_norm(const TensorF32& g) {
+  if (g.data.empty()) return 0.0;
+  double s = 0.0;
+  for (float v : g.data) {
+    const double f = static_cast<double>(v);
+    s += f * f;
+  }
+  return std::sqrt(s / static_cast<double>(g.data.size()));
+}
+
+int accel_every(const stack::SplitAccel* acc) {
+  if (!acc || acc->cache_every <= 0) return 20; // Go defaultLinearCacheEvery
+  return acc->cache_every;
+}
+
+// Go LinearCache: hit rescales cached P(gy) by live/cacheNorm then 1/N GradWOnly;
+// miss runs linear walk, fills cache, stores gap norm.
+Status apply_linear_cache_leaves(std::vector<Leaf>& leaves, const TensorF32& grad_out, double lr,
+                                 stack::SplitAccel* acc, stack::Layer* root = nullptr,
+                                 stack::Child* child = nullptr) {
+  const int n = static_cast<int>(leaves.size());
+  if (n == 0) return Status::Ok();
+  const int every = accel_every(acc);
+  if (acc && static_cast<int>(acc->cache.size()) == n && acc->cache_norm > 1e-12 &&
+      (acc->tick % every) != 0) {
+    const double live = gap_norm(grad_out);
+    const double rescale = live / acc->cache_norm;
+    acc->tick++;
+    const double scale = 1.0 / static_cast<double>(n);
+    for (int i = 0; i < n; ++i) {
+      Leaf& leaf = leaves[static_cast<std::size_t>(i)];
+      if (leaf.post.data.empty() || i >= static_cast<int>(acc->cache.size())) continue;
+      const auto& buf = acc->cache[static_cast<std::size_t>(i)];
+      if (static_cast<int>(buf.size()) != static_cast<int>(leaf.post.data.size())) continue;
+      TensorF32 gi;
+      gi.shape = leaf.post.shape;
+      gi.data.resize(buf.size());
+      for (std::size_t j = 0; j < buf.size(); ++j) {
+        gi.data[j] = static_cast<float>(static_cast<double>(buf[j]) * rescale);
+      }
+      scale_gap(&gi, scale);
+      if (auto st = leaf_dw_linear(leaf, gi, lr); !st) {
+        return Status::Err(st.code, std::string("tween_split linearcache hit: ") + st.message);
+      }
+    }
+    return Status::Ok();
+  }
+  std::vector<std::vector<float>> fill;
+  std::vector<std::vector<float>>* fill_ptr = nullptr;
+  if (acc) {
+    fill.resize(static_cast<std::size_t>(n));
+    fill_ptr = &fill;
+  }
+  if (auto st = apply_linear_leaves(leaves, grad_out, lr, fill_ptr, root, child); !st) return st;
+  if (acc) {
+    acc->cache = std::move(fill);
+    acc->cache_norm = gap_norm(grad_out);
+    acc->tick++;
+  }
+  return Status::Ok();
+}
+
 Status apply_variant_leaves(std::vector<Leaf>& leaves, const TensorF32& gy, double lr,
                             Variant variant, stack::Layer* root = nullptr,
-                            stack::Child* child = nullptr) {
+                            stack::Child* child = nullptr, stack::SplitAccel* accel = nullptr) {
   if (static_cast<int>(variant) < 0 || static_cast<int>(variant) > 6) {
     return Status::Gap("split: unsupported variant");
   }
@@ -566,6 +629,9 @@ Status apply_variant_leaves(std::vector<Leaf>& leaves, const TensorF32& gy, doub
     return apply_linear_leaves(leaves, gy, lr, nullptr, root, child);
   }
   if (variant == Variant::FastProxy) return apply_fast_proxy_leaves(leaves, gy, lr);
+  if (variant == Variant::LinearCache) {
+    return apply_linear_cache_leaves(leaves, gy, lr, accel, root, child);
+  }
   return Status::Gap(std::string("tween_split variant ") +
                      std::to_string(static_cast<int>(variant)) + " not wired on CUDA yet");
 }
@@ -680,14 +746,17 @@ Status train_stack_variant(stack::Layer& ops, const TensorF32& input, const Tens
   if (auto st = collect_stack_leaves(ops, input, &leaves, &post); !st) return st;
   if (auto st = runtime::training::mse(post, target, loss); !st) return st;
   if (auto st = runtime::training::mse_grad(post, target, &gy); !st) return st;
-  return apply_variant_leaves(leaves, gy, lr, variant, &ops, nullptr);
+  return apply_variant_leaves(leaves, gy, lr, variant, &ops, nullptr, &ops.accel);
 }
 
 Status apply_variant_child(stack::Child& child, const TensorF32& gy, const TensorF32& input,
                            double lr, Variant variant) {
   std::vector<Leaf> leaves;
   if (auto st = collect_child(child, input, &leaves); !st) return st;
-  return apply_variant_leaves(leaves, gy, lr, variant, nullptr, &child);
+  stack::SplitAccel* accel =
+      (child.kind == stack::Kind::NestedStack || child.kind == stack::Kind::Parallel) ? &child.accel
+                                                                                     : nullptr;
+  return apply_variant_leaves(leaves, gy, lr, variant, nullptr, &child, accel);
 }
 
 Status train_volume_variant(architecture::Grid& g, const runtime::forward::Result& fwd,
@@ -698,7 +767,7 @@ Status train_volume_variant(architecture::Grid& g, const runtime::forward::Resul
   if (auto st = runtime::training::mse(fwd.output, target, loss); !st) return st;
   if (auto st = runtime::training::mse_grad(fwd.output, target, &gy); !st) return st;
   if (auto st = collect_volume_leaves(g, fwd, &leaves); !st) return st;
-  return apply_variant_leaves(leaves, gy, lr, variant);
+  return apply_variant_leaves(leaves, gy, lr, variant, nullptr, nullptr, &g.accel);
 }
 
 Status apply_cell_variant(architecture::Cell& cell, const TensorF32& gy, const TensorF32& input,
@@ -706,7 +775,12 @@ Status apply_cell_variant(architecture::Cell& cell, const TensorF32& gy, const T
   if (cell.meta.is_disabled || input.data.empty() || gy.data.empty()) return Status::Ok();
   std::vector<Leaf> leaves;
   if (auto st = collect_cell_leaves(cell, input, pre, post, &leaves); !st) return st;
-  return apply_variant_leaves(leaves, gy, lr, variant);
+  stack::SplitAccel* accel =
+      (cell.op_kind == architecture::OpKind::Stack ||
+       cell.op_kind == architecture::OpKind::Parallel)
+          ? &cell.accel
+          : nullptr;
+  return apply_variant_leaves(leaves, gy, lr, variant, nullptr, nullptr, accel);
 }
 
 } // namespace welvet::systems::tween_split
