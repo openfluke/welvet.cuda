@@ -8,7 +8,7 @@ It will run directly from C++ and through a stable C ABI. Go Welvet can later de
 
 | | |
 |--|--|
-| **Version** | **`0.68`** |
+| **Version** | **`0.69`** |
 | **Engine board** | **67 / 100** (same 10 categories as Go Welvet) |
 | **Compute** | NVIDIA GPU (CUDA) — primary · CPU / Metal / QNN siblings remain separate repos — never implied |
 | **Parity reference** | [welvet](https://github.com/openfluke/welvet) Go **v1.2.0** (100/100) |
@@ -22,7 +22,7 @@ It will run directly from C++ and through a stable C ABI. Go Welvet can later de
 ```bash
 ./scripts/build_linux.sh
 ./build/example_cuda_smoke
-./build/welvet_dense_fwd --version   # 0.68
+./build/welvet_dense_fwd --version   # 0.69
 ./build/welvet_dense_fwd --identity
 ./build/welvet_dense_fwd --gaps
 ./scripts/linux_build_w2a.sh --leaf-fwd-all
@@ -47,8 +47,8 @@ It will run directly from C++ and through a stable C ABI. Go Welvet can later de
 | StepBP Line + Dense MeshBP | ✅ `TestGoVCudaStepBPTrain` |
 | Heterogeneous MeshBP (MGB1) | ✅ `TestGoVCudaMeshBPTrain` (103) |
 | ModeTween / ModeTweenChain / ModeTweenSplit / ModeStepTweenSplit / ModeTweenAlt / ModeStepTweenAlt / MeshTween / MeshTweenChain / StepTween / StepTweenChain | ✅ 130 / 130 / 131 / 130 / 130 / 130 / 159 / 160 / 130 / 130 |
-| ModeTweenSplitHeadProxy / Linear / FastProxy / LinearCache / HeadProxyAsync | ✅ ProxyTrain + ProxyVolume (async: 65/69) |
-| Remaining Tween* (Sparse + Mesh/Step proxy) / CamSync / other systems / model | ⬜ |
+| ModeTweenSplitHeadProxy / Linear / FastProxy / LinearCache / HeadProxyAsync / Sparse | ✅ ProxyTrain + ProxyVolume (sparse: 65/69) |
+| Remaining Tween* (Mesh/Step proxy) / CamSync / other systems / model | ⬜ |
 
 ---
 
@@ -195,11 +195,11 @@ Identical ten categories / weights as Go Welvet. Credit only from **this** CUDA 
 | 4 | **CNN / RNN / LSTM** | 6 | CNN1–3 + RNN + LSTM leaf fwd + NormalBP | ✅ | **6** |
 | 5 | **Extended layers** — GDN, ConvT1–3, Mamba, KMeans, Parallel, Metacognition | 7 | leaf fwd + NormalBP (incl. Stack); seqmix metadata | ✅ | **7** |
 | 6 | **Runtime + architecture** — volumetric grid, forward, backward, training, step/mesh | 8 | Volume NormalBP + Step/Mesh/Tween* Line clocks + proxy volumes | ✅ | **8** |
-| 7 | **Systems** — dna, evolution, tween, tanhi, telemetry | 5 | systems/tween* (+ HeadProxy/Linear/FastProxy/LinearCache/Async) + tween_alt | 🚧 | **4** |
+| 7 | **Systems** — dna, evolution, tween, tanhi, telemetry | 5 | systems/tween* (+ HeadProxy…Sparse leaf/volume) + tween_alt | 🚧 | **5** |
 | 8 | **Model / IO** — tokenizer, entity, transformer, sampling, hf | 8 | — | ⬜ | **0** |
-| 9 | **Training credit** — 29 modes + cameral BranchModes / CamSync | 8 | … + HeadProxy + Linear + FastProxy + LinearCache + Async; remaining Tween* open | 🚧 | **8** |
+| 9 | **Training credit** — 29 modes + cameral BranchModes / CamSync | 8 | … + HeadProxy…Sparse leaf/volume; Mesh/Step proxy + CamSync open | 🚧 | **8** |
 | 10 | **Peak fused / no host ALU** — fused CUDA kernels, decoder fuse, provenance | 14 | — | ⬜ | **0** |
-| | **Total → version** | **100** | | **🚧** | **68 / 100 → `0.68`** |
+| | **Total → version** | **100** | | **🚧** | **69 / 100 → `0.69`** |
 
 **Path to 1.0:** same order Go used / welvet.cpp is following — Dense FormatNone + NormalBP → layers → Step/Mesh/Tween* → Systems + Model/IO → CamSync + peak fused CUDA. welvet.cpp’s ✅ list is the **port order**, not transferred credit.
 
@@ -485,7 +485,7 @@ Tick **Inside node** (`1×1×1`) and **3D volumetric** separately. **Signed** = 
 | 18 | TweenSplitFastProxy | TweenSplit | ✅ | ✅ | ✅ | 0.66 |
 | 19 | TweenSplitLinearCache | TweenSplit | ✅ | ✅ | ✅ | 0.67 |
 | 20 | TweenSplitHeadProxyAsync | TweenSplit | ✅ | ✅ | ✅ | 0.68 |
-| 21 | TweenSplitSparse | TweenSplit | ⬜ | ⬜ | ⬜ | |
+| 21 | TweenSplitSparse | TweenSplit | ✅ | ✅ | ✅ | 0.69 |
 | 22 | MeshTweenSplitFastProxy | TweenSplit | ⬜ | ⬜ | ⬜ | |
 | 23 | MeshTweenSplitSparse | TweenSplit | ⬜ | ⬜ | ⬜ | |
 | 24 | StepTweenSplitHeadProxy | TweenSplit | ⬜ | ⬜ | ⬜ | |

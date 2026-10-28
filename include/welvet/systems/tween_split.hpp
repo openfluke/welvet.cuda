@@ -12,7 +12,7 @@ namespace welvet::systems::tween_split {
 // (Go applySplitEven / OpenSplitTape). Full lr; no chain rule.
 // Dense leaves use GradWOnly-equivalent dW; other Ops use local Backward+SGD.
 
-// Proxy variants (metal/Go enum). … LinearCache=4 §17; HeadProxyAsync=5 §18; Sparse later.
+// Proxy variants (metal/Go enum). … HeadProxyAsync=5 §18; Sparse=6 §19.
 enum class Variant : int {
   Split = 0,
   HeadProxy = 1,

@@ -570,6 +570,43 @@ int accel_every(const stack::SplitAccel* acc) {
   return acc->cache_every;
 }
 
+// Go Sparse: pre-update linear head proxy; head GradWOnly; one rotating hidden
+// leaf at full share (scale 1/1). accel->sparse advances across epochs.
+Status apply_sparse_leaves(std::vector<Leaf>& leaves, const TensorF32& grad_out, double lr,
+                           stack::SplitAccel* accel) {
+  const int n = static_cast<int>(leaves.size());
+  if (n == 0) return Status::Ok();
+  Leaf& head = leaves[static_cast<std::size_t>(n - 1)];
+  if (head.post.data.empty()) return apply_leaves(leaves, grad_out, lr);
+
+  TensorF32 proxy;
+  if (auto st = linear_grad_in_leaf_nopre(head, grad_out, &proxy); !st) {
+    return Status::Err(st.code, std::string("tween_split sparse proxy: ") + st.message);
+  }
+  TensorF32 g_head;
+  if (auto st = systems::tween::project_gap(grad_out, head.post.shape, &g_head); !st) return st;
+  if (auto st = leaf_dw_linear(head, g_head, lr); !st) {
+    return Status::Err(st.code, std::string("tween_split sparse head: ") + st.message);
+  }
+  if (n == 1) return Status::Ok();
+
+  int selected = 0;
+  if (accel) {
+    selected = accel->sparse % (n - 1);
+    accel->sparse++;
+  }
+  const TensorF32& src = proxy.data.empty() ? grad_out : proxy;
+  Leaf& leaf = leaves[static_cast<std::size_t>(selected)];
+  if (leaf.post.data.empty()) return Status::Ok();
+  TensorF32 gi;
+  if (auto st = systems::tween::project_gap(src, leaf.post.shape, &gi); !st) return st;
+  // Go applyLeafDW / volume proxyHidden(..., n=1): full share, no 1/(N−1).
+  if (auto st = leaf_dw_linear(leaf, gi, lr); !st) {
+    return Status::Err(st.code, std::string("tween_split sparse hidden: ") + st.message);
+  }
+  return Status::Ok();
+}
+
 // Go HeadProxyAsync: stale accel.proxy → hidden 1/(N−1); head GradWOnly; then
 // linearGradIn on *updated* head W and store; first epoch also applies fresh proxy.
 Status apply_head_proxy_async_leaves(std::vector<Leaf>& leaves, const TensorF32& grad_out, double lr,
@@ -672,6 +709,9 @@ Status apply_variant_leaves(std::vector<Leaf>& leaves, const TensorF32& gy, doub
   }
   if (variant == Variant::HeadProxyAsync) {
     return apply_head_proxy_async_leaves(leaves, gy, lr, accel);
+  }
+  if (variant == Variant::Sparse) {
+    return apply_sparse_leaves(leaves, gy, lr, accel);
   }
   return Status::Gap(std::string("tween_split variant ") +
                      std::to_string(static_cast<int>(variant)) + " not wired on CUDA yet");

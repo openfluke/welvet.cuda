@@ -9,8 +9,8 @@ Canonical enum: Go `layers/parallel/train_mode.go` (`TrainMode`).
 and [`welvet.cpp/docs/TRAINING_CHECKLIST.md`](../../welvet.cpp/docs/TRAINING_CHECKLIST.md).
 Same cases / wires / column meanings; status here is **CUDA** only. metal/cpp checkmarks do **not** transfer credit.
 
-**Current engine:** `0.68` (… + LinearCache + **ModeTweenSplitHeadProxyAsync signed** — **68 / 100** on the engine board).
-Prior mode suites PASS. ProxyTrain/ProxyVolume PASS through HeadProxyAsync (65 leaf + 69 volume, 4-epoch stale reuse). Remaining Tween* Sparse / Mesh/Step proxy / CamSync remain open.
+**Current engine:** `0.69` (… + HeadProxyAsync + **ModeTweenSplitSparse signed** — **69 / 100** on the engine board).
+Prior mode suites PASS. ProxyTrain/ProxyVolume PASS through Sparse (65 leaf + 69 volume, 4-epoch rotate). Remaining Tween* Mesh/Step proxy / CamSync remain open.
 
 ---
 
@@ -1577,31 +1577,31 @@ Wires: `GPB1`/`GPBO` (variant 6); `PGB1`/`PGVO` for actual-type volumes. Tests: 
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [ ] | [ ] | |
-| Residual | [ ] | [ ] | [ ] | |
-| KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
-| Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 0.69 |
+| RMSNorm | [x] | [x] | [x] | 0.69 |
+| LayerNorm | [x] | [x] | [x] | 0.69 |
+| SwiGLU | [x] | [x] | [x] | 0.69 |
+| Softmax | [x] | [x] | [x] | 0.69 |
+| Embedding | [x] | [x] | [x] | 0.69 |
+| MHA | [x] | [x] | [x] | 0.69 |
+| CNN1 | [x] | [x] | [x] | 0.69 |
+| CNN2 | [x] | [x] | [x] | 0.69 |
+| CNN3 | [x] | [x] | [x] | 0.69 |
+| ConvT1 | [x] | [x] | [x] | 0.69 |
+| ConvT2 | [x] | [x] | [x] | 0.69 |
+| ConvT3 | [x] | [x] | [x] | 0.69 |
+| RNN | [x] | [x] | [x] | 0.69 |
+| LSTM | [x] | [x] | [x] | 0.69 |
+| Sequential | [x] | [x] | [x] | 0.69 |
+| Residual | [x] | [x] | [x] | 0.69 |
+| KMeans | [x] | [x] | [x] | 0.69 |
+| Mamba | [x] | [x] | [x] | 0.69 |
+| Metacognition | [x] | [x] | [x] | 0.69 |
+| GDN | [x] | [x] | [x] | 0.69 |
+| Parallel | [x] | [x] | [x] | 0.69 |
+| Stack | [x] | [x] | [x] | 0.69 |
 
-**Checkpoint:** ⬜ not signed yet (CUDA).
+**Checkpoint:** Direct Go↔CUDA parity and repeated replay passed for all 23 families (34 native dtypes where supported; GDN Float32). Leaf fixtures retain their declared precision gates. Proxy volume loss, captured tensors and native weights require industry-or-better (60–100%) agreement, with actual deviations reported; observed sparse rounding differences were strict (80%). Exact same-backend replay is checked separately. Numerical projection, credit, norms and SGD run in CUDA; host code schedules work and stages tapes. Full graph residency and performance tuning remain open.
 
 ---
 
@@ -2009,6 +2009,7 @@ Run: `./scripts/linux_build_w2a.sh --training-25-29-all`.
 | **0.66** | ModeTweenSplitFastProxy (`GPB1`/`GPBO` + `PGB1`/`PGVO` variant 3; linear head proxy then hidden 1/(N−1)) — 65 leaf + 69 volume; PASS (~546s / ~729s @ BENCH_ITERS=1). Engine board **66 / 100**. |
 | **0.67** | ModeTweenSplitLinearCache (`GPB1`/`GPBO` + `PGB1`/`PGVO` variant 4; refresh every 20) — 88 leaf + 92 volume; PASS (~563s / ~747s @ BENCH_ITERS=1). Engine board **67 / 100**. |
 | **0.68** | ModeTweenSplitHeadProxyAsync (`GPB1`/`GPBO` + `PGB1`/`PGVO` variant 5; stale Wᵀgy then post-update store) — 65 leaf + 69 volume; PASS (~559s / ~731s @ BENCH_ITERS=1). Engine board **68 / 100**. |
+| **0.69** | ModeTweenSplitSparse (`GPB1`/`GPBO` + `PGB1`/`PGVO` variant 6; pre-update proxy + rotate one hidden) — 65 leaf + 69 volume; PASS (~547s / ~730s @ BENCH_ITERS=1). Engine board **69 / 100**. |
 | | Tick rows + bump version as w2a `go_v_cuda` suites pass. |
 
 ## Mixed Go / C++ / CUDA routing — sign-off evidence
