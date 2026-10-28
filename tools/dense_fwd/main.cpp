@@ -51,6 +51,7 @@
 //   STW1 — Line StepTween FamilyTween → STWO; --bench → WVB1
 //   STC1 — Line StepTweenChain FamilyBP → STCO; --bench → WVB1
 //   STS1 — Line StepTweenSplit FamilyTweenSplit → STSO; --bench → WVB1
+//   STH1/STL1/STF1/SLC1/SHA1/SSP1 — Line StepTweenSplit* proxy credits → STHO…
 //   TAB1 — ModeTweenAlt leaf stack → TABO; volumes TAV1/TRA1…/KMAL/PNAL
 //   STA1 — Line StepTweenAlt FamilyTweenAlt → STAO; --bench → WVB1
 //   MBP1 — Dense mesh-clock MeshBP → MBPO; --bench → WVB1
@@ -1327,6 +1328,19 @@ int main(int argc, char** argv) {
     return run_stepbp(bench_iters, welvet::runtime::line::Credit::FamilyTweenSplit, "STSO");
   if (std::memcmp(magic, "STA1", 4) == 0)
     return run_stepbp(bench_iters, welvet::runtime::line::Credit::FamilyTweenAlt, "STAO");
+  if (std::memcmp(magic, "STH1", 4) == 0)
+    return run_stepbp(bench_iters, welvet::runtime::line::Credit::FamilyTweenSplitHeadProxy, "STHO");
+  if (std::memcmp(magic, "STL1", 4) == 0)
+    return run_stepbp(bench_iters, welvet::runtime::line::Credit::FamilyTweenSplitLinear, "STLO");
+  if (std::memcmp(magic, "STF1", 4) == 0)
+    return run_stepbp(bench_iters, welvet::runtime::line::Credit::FamilyTweenSplitFastProxy, "STFO");
+  if (std::memcmp(magic, "SLC1", 4) == 0)
+    return run_stepbp(bench_iters, welvet::runtime::line::Credit::FamilyTweenSplitLinearCache, "SLCO");
+  if (std::memcmp(magic, "SHA1", 4) == 0)
+    return run_stepbp(bench_iters, welvet::runtime::line::Credit::FamilyTweenSplitHeadProxyAsync,
+                      "SHAO");
+  if (std::memcmp(magic, "SSP1", 4) == 0)
+    return run_stepbp(bench_iters, welvet::runtime::line::Credit::FamilyTweenSplitSparse, "SSPO");
   if (std::memcmp(magic, "TWB1", 4) == 0) return run_tween_leaf(bench_iters);
   if (std::memcmp(magic, "TWV1", 4) == 0) return run_volume_normalbp(bench_iters, VolumeTrainMode::Tween);
   if (std::memcmp(magic, "TRV1", 4) == 0) return run_volume_rmsnorm_normalbp(bench_iters, VolumeTrainMode::Tween);

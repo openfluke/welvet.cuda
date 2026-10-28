@@ -66,6 +66,7 @@ usage: $0 [flags]
   --steptweenchain-train  ModeStepTweenChain STC1/STCO + TweenChain volumes (TestGoVCudaStepTweenChainTrain)
   --proxy-train       TweenSplit proxy modes GPB1/PGB1 (TestGoVCudaProxyTrain + ProxyVolumeTrain)
   --mesh-split-modes  MeshTweenSplit/Alt/FastProxy/Sparse clock + shared volumes (TestGoVCudaMeshSplitModes)
+  --training-25-29-all  StepTweenSplit Linear…Sparse Line proxies (TestGoVCudaStepProxyTrain)
   --help
 EOF
 }
@@ -76,7 +77,7 @@ if [[ $# -gt 0 ]]; then
     --help|-h) usage; exit 0 ;;
     --smoke) MODE=smoke; shift ;;
     --gaps) MODE=gaps; shift ;;
-    --dense-fwd|--rmsnorm-fwd|--layernorm-fwd|--softmax-fwd|--swiglu-fwd|--embedding-fwd|--mha-fwd|--cnn-fwd|--convt-fwd|--rnn-fwd|--lstm-fwd|--sequential-fwd|--residual-fwd|--mamba-fwd|--metacognition-fwd|--gdn-fwd|--kmeans-fwd|--parallel-fwd|--seqmix-fwd|--leaf-fwd-all|--dense-train|--rmsnorm-train|--layernorm-train|--softmax-train|--swiglu-train|--embedding-train|--mha-train|--cnn-train|--convt-train|--rnn-train|--lstm-train|--sequential-train|--residual-train|--stack-train|--mamba-train|--metacognition-train|--gdn-train|--kmeans-train|--parallel-train|--normalbp-all|--stepbp-train|--meshbp-train|--tween-train|--tweenchain-train|--tweensplit-train|--steptweensplit-train|--tweenalt-train|--steptweenalt-train|--meshtween-train|--meshtweenchain-train|--steptween-train|--steptweenchain-train|--proxy-train|--mesh-split-modes)
+    --dense-fwd|--rmsnorm-fwd|--layernorm-fwd|--softmax-fwd|--swiglu-fwd|--embedding-fwd|--mha-fwd|--cnn-fwd|--convt-fwd|--rnn-fwd|--lstm-fwd|--sequential-fwd|--residual-fwd|--mamba-fwd|--metacognition-fwd|--gdn-fwd|--kmeans-fwd|--parallel-fwd|--seqmix-fwd|--leaf-fwd-all|--dense-train|--rmsnorm-train|--layernorm-train|--softmax-train|--swiglu-train|--embedding-train|--mha-train|--cnn-train|--convt-train|--rnn-train|--lstm-train|--sequential-train|--residual-train|--stack-train|--mamba-train|--metacognition-train|--gdn-train|--kmeans-train|--parallel-train|--normalbp-all|--stepbp-train|--meshbp-train|--tween-train|--tweenchain-train|--tweensplit-train|--steptweensplit-train|--tweenalt-train|--steptweenalt-train|--meshtween-train|--meshtweenchain-train|--steptween-train|--steptweenchain-train|--proxy-train|--mesh-split-modes|--training-25-29-all)
       MODE="${1#--}"; shift ;;
     *)
       echo "unknown flag '$1'" >&2
@@ -176,4 +177,5 @@ case "$MODE" in
   steptweenchain-train) run_go_test '^(TestGoVCudaStepTweenChainTrain|TestGoVCudaTweenChainTrain)$' ;;
   proxy-train) run_go_test '^(TestGoVCudaProxyTrain|TestGoVCudaProxyVolumeTrain)$' ;;
   mesh-split-modes) run_go_test '^TestGoVCudaMeshSplitModes$' ;;
+  training-25-29-all) run_go_test '^TestGoVCudaStepProxyTrain$' ;;
 esac

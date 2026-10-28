@@ -9,8 +9,8 @@ Canonical enum: Go `layers/parallel/train_mode.go` (`TrainMode`).
 and [`welvet.cpp/docs/TRAINING_CHECKLIST.md`](../../welvet.cpp/docs/TRAINING_CHECKLIST.md).
 Same cases / wires / column meanings; status here is **CUDA** only. metal/cpp checkmarks do **not** transfer credit.
 
-**Current engine:** `0.73` (… + MeshTweenSplitFastProxy + **MeshTweenSplitSparse signed** — **73 / 100** on the engine board).
-Prior mode suites PASS. MeshTweenSplitSparse 172 groups (MGQ1/MGQO). Remaining Tween* Step proxy / CamSync remain open.
+**Current engine:** `0.79` (… + MeshTweenSplitSparse + **StepTweenSplit HeadProxy…Sparse signed** — **79 / 100** on the engine board).
+Prior mode suites PASS. Step proxy Line credits 4–9 (STH1…SSP1). Freeze/Shadow / CamSync / mixed-routing remain open.
 
 ---
 
@@ -84,7 +84,7 @@ Not signed yet. Same scope as welvet.metal when the CUDA path lands: Freeze/Shad
 | MSE / MSEGrad | ✅ host f64 match Go (Dense NormalBP) |
 | SGD and native storage updates | ✅ FormatNone Dense SGD |
 | GDN | ✅ f32 truncated-BPTT NormalBP leaf+vol |
-| Tween / TweenChain / Split / Alt / proxy / mesh variants | 🚧 ModeTween + ModeTweenChain + ModeTweenSplit + ModeStepTweenSplit + ModeTweenAlt + ModeStepTweenAlt + MeshTween + MeshTweenChain + ModeStepTween + ModeStepTweenChain signed; remaining Tween* open |
+| Tween / TweenChain / Split / Alt / proxy / mesh variants | ✅ ModeTween…MeshTweenSplitSparse + StepTweenSplit HeadProxy/Linear/FastProxy/LinearCache/Async/Sparse signed; Freeze/Shadow / CamSync open |
 | Scheduling and data movement | Host validation, scheduling, allocation, copies and storage staging (permitted) |
 | GPU-only enforcement | M0 host scaffold only; numerical CUDA-only gate lands with first training suites |
 
@@ -1757,31 +1757,32 @@ Wire: `STH1`/`STHO`. `TestGoVCudaProxyTrain/StepTweenSplitHeadProxy` covers 65 l
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [ ] | [ ] | |
-| Residual | [ ] | [ ] | [ ] | |
-| KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
-| Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 0.74 |
+| RMSNorm | [x] | [x] | [x] | 0.74 |
+| LayerNorm | [x] | [x] | [x] | 0.74 |
+| SwiGLU | [x] | [x] | [x] | 0.74 |
+| Softmax | [x] | [x] | [x] | 0.74 |
+| Embedding | [x] | [x] | [x] | 0.74 |
+| MHA | [x] | [x] | [x] | 0.74 |
+| CNN1 | [x] | [x] | [x] | 0.74 |
+| CNN2 | [x] | [x] | [x] | 0.74 |
+| CNN3 | [x] | [x] | [x] | 0.74 |
+| ConvT1 | [x] | [x] | [x] | 0.74 |
+| ConvT2 | [x] | [x] | [x] | 0.74 |
+| ConvT3 | [x] | [x] | [x] | 0.74 |
+| RNN | [x] | [x] | [x] | 0.74 |
+| LSTM | [x] | [x] | [x] | 0.74 |
+| Sequential | [x] | [x] | [x] | 0.74 |
+| Residual | [x] | [x] | [x] | 0.74 |
+| KMeans | [x] | [x] | [x] | 0.74 |
+| Mamba | [x] | [x] | [x] | 0.74 |
+| Metacognition | [x] | [x] | [x] | 0.74 |
+| GDN | [x] | [x] | [x] | 0.74 |
+| Parallel | [x] | [x] | [x] | 0.74 |
+| Stack | [x] | [x] | [x] | 0.74 |
 
-**Checkpoint:** ⬜ not signed yet (CUDA).
+
+**Checkpoint:** ✅ `TestGoVCudaProxyTrain/StepTweenSplitHeadProxy` PASS (65 groups, ~561s @ BENCH_ITERS=1). Shared volume evidence: section 14 (`TestGoVCudaProxyVolumeTrain` HeadProxy). Industry spectrum for Line proxy W/loss (incl. HeadProxy variant 1).
 
 ---
 
@@ -1797,31 +1798,32 @@ Run: `./scripts/linux_build_w2a.sh --training-25-29-all`.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [ ] | [ ] | |
-| Residual | [ ] | [ ] | [ ] | |
-| KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
-| Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 0.75 |
+| RMSNorm | [x] | [x] | [x] | 0.75 |
+| LayerNorm | [x] | [x] | [x] | 0.75 |
+| SwiGLU | [x] | [x] | [x] | 0.75 |
+| Softmax | [x] | [x] | [x] | 0.75 |
+| Embedding | [x] | [x] | [x] | 0.75 |
+| MHA | [x] | [x] | [x] | 0.75 |
+| CNN1 | [x] | [x] | [x] | 0.75 |
+| CNN2 | [x] | [x] | [x] | 0.75 |
+| CNN3 | [x] | [x] | [x] | 0.75 |
+| ConvT1 | [x] | [x] | [x] | 0.75 |
+| ConvT2 | [x] | [x] | [x] | 0.75 |
+| ConvT3 | [x] | [x] | [x] | 0.75 |
+| RNN | [x] | [x] | [x] | 0.75 |
+| LSTM | [x] | [x] | [x] | 0.75 |
+| Sequential | [x] | [x] | [x] | 0.75 |
+| Residual | [x] | [x] | [x] | 0.75 |
+| KMeans | [x] | [x] | [x] | 0.75 |
+| Mamba | [x] | [x] | [x] | 0.75 |
+| Metacognition | [x] | [x] | [x] | 0.75 |
+| GDN | [x] | [x] | [x] | 0.75 |
+| Parallel | [x] | [x] | [x] | 0.75 |
+| Stack | [x] | [x] | [x] | 0.75 |
 
-**Checkpoint:** ⬜ not signed yet (CUDA).
+
+**Checkpoint:** ✅ `TestGoVCudaStepProxyTrain/StepTweenSplitLinear` PASS (69 groups, ~584s @ BENCH_ITERS=1). Shared volume evidence: section 15 (`PGB1`/`PGVO` variant 2).
 
 ---
 
@@ -1837,31 +1839,32 @@ Run: `./scripts/linux_build_w2a.sh --training-25-29-all`.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [ ] | [ ] | |
-| Residual | [ ] | [ ] | [ ] | |
-| KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
-| Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 0.76 |
+| RMSNorm | [x] | [x] | [x] | 0.76 |
+| LayerNorm | [x] | [x] | [x] | 0.76 |
+| SwiGLU | [x] | [x] | [x] | 0.76 |
+| Softmax | [x] | [x] | [x] | 0.76 |
+| Embedding | [x] | [x] | [x] | 0.76 |
+| MHA | [x] | [x] | [x] | 0.76 |
+| CNN1 | [x] | [x] | [x] | 0.76 |
+| CNN2 | [x] | [x] | [x] | 0.76 |
+| CNN3 | [x] | [x] | [x] | 0.76 |
+| ConvT1 | [x] | [x] | [x] | 0.76 |
+| ConvT2 | [x] | [x] | [x] | 0.76 |
+| ConvT3 | [x] | [x] | [x] | 0.76 |
+| RNN | [x] | [x] | [x] | 0.76 |
+| LSTM | [x] | [x] | [x] | 0.76 |
+| Sequential | [x] | [x] | [x] | 0.76 |
+| Residual | [x] | [x] | [x] | 0.76 |
+| KMeans | [x] | [x] | [x] | 0.76 |
+| Mamba | [x] | [x] | [x] | 0.76 |
+| Metacognition | [x] | [x] | [x] | 0.76 |
+| GDN | [x] | [x] | [x] | 0.76 |
+| Parallel | [x] | [x] | [x] | 0.76 |
+| Stack | [x] | [x] | [x] | 0.76 |
 
-**Checkpoint:** ⬜ not signed yet (CUDA).
+
+**Checkpoint:** ✅ `TestGoVCudaStepProxyTrain/StepTweenSplitFastProxy` PASS (69 groups, ~568s @ BENCH_ITERS=1). Shared volume evidence: section 16 (`PGB1`/`PGVO` variant 3).
 
 ---
 
@@ -1877,31 +1880,32 @@ Run: `./scripts/linux_build_w2a.sh --training-25-29-all`.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [ ] | [ ] | |
-| Residual | [ ] | [ ] | [ ] | |
-| KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
-| Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 0.77 |
+| RMSNorm | [x] | [x] | [x] | 0.77 |
+| LayerNorm | [x] | [x] | [x] | 0.77 |
+| SwiGLU | [x] | [x] | [x] | 0.77 |
+| Softmax | [x] | [x] | [x] | 0.77 |
+| Embedding | [x] | [x] | [x] | 0.77 |
+| MHA | [x] | [x] | [x] | 0.77 |
+| CNN1 | [x] | [x] | [x] | 0.77 |
+| CNN2 | [x] | [x] | [x] | 0.77 |
+| CNN3 | [x] | [x] | [x] | 0.77 |
+| ConvT1 | [x] | [x] | [x] | 0.77 |
+| ConvT2 | [x] | [x] | [x] | 0.77 |
+| ConvT3 | [x] | [x] | [x] | 0.77 |
+| RNN | [x] | [x] | [x] | 0.77 |
+| LSTM | [x] | [x] | [x] | 0.77 |
+| Sequential | [x] | [x] | [x] | 0.77 |
+| Residual | [x] | [x] | [x] | 0.77 |
+| KMeans | [x] | [x] | [x] | 0.77 |
+| Mamba | [x] | [x] | [x] | 0.77 |
+| Metacognition | [x] | [x] | [x] | 0.77 |
+| GDN | [x] | [x] | [x] | 0.77 |
+| Parallel | [x] | [x] | [x] | 0.77 |
+| Stack | [x] | [x] | [x] | 0.77 |
 
-**Checkpoint:** ⬜ not signed yet (CUDA).
+
+**Checkpoint:** ✅ `TestGoVCudaStepProxyTrain/StepTweenSplitLinearCache` PASS (76 groups, ~576s @ BENCH_ITERS=1). Shared volume evidence: section 17 (`PGB1`/`PGVO` variant 4).
 
 ---
 
@@ -1917,31 +1921,32 @@ Run: `./scripts/linux_build_w2a.sh --training-25-29-all`.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [ ] | [ ] | |
-| Residual | [ ] | [ ] | [ ] | |
-| KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
-| Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 0.78 |
+| RMSNorm | [x] | [x] | [x] | 0.78 |
+| LayerNorm | [x] | [x] | [x] | 0.78 |
+| SwiGLU | [x] | [x] | [x] | 0.78 |
+| Softmax | [x] | [x] | [x] | 0.78 |
+| Embedding | [x] | [x] | [x] | 0.78 |
+| MHA | [x] | [x] | [x] | 0.78 |
+| CNN1 | [x] | [x] | [x] | 0.78 |
+| CNN2 | [x] | [x] | [x] | 0.78 |
+| CNN3 | [x] | [x] | [x] | 0.78 |
+| ConvT1 | [x] | [x] | [x] | 0.78 |
+| ConvT2 | [x] | [x] | [x] | 0.78 |
+| ConvT3 | [x] | [x] | [x] | 0.78 |
+| RNN | [x] | [x] | [x] | 0.78 |
+| LSTM | [x] | [x] | [x] | 0.78 |
+| Sequential | [x] | [x] | [x] | 0.78 |
+| Residual | [x] | [x] | [x] | 0.78 |
+| KMeans | [x] | [x] | [x] | 0.78 |
+| Mamba | [x] | [x] | [x] | 0.78 |
+| Metacognition | [x] | [x] | [x] | 0.78 |
+| GDN | [x] | [x] | [x] | 0.78 |
+| Parallel | [x] | [x] | [x] | 0.78 |
+| Stack | [x] | [x] | [x] | 0.78 |
 
-**Checkpoint:** ⬜ not signed yet (CUDA).
+
+**Checkpoint:** ✅ `TestGoVCudaStepProxyTrain/StepTweenSplitHeadProxyAsync` PASS (69 groups, ~567s @ BENCH_ITERS=1). Shared volume evidence: section 18 (`PGB1`/`PGVO` variant 5).
 
 ---
 
@@ -1957,31 +1962,32 @@ Run: `./scripts/linux_build_w2a.sh --training-25-29-all`.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [ ] | [ ] | |
-| Residual | [ ] | [ ] | [ ] | |
-| KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
-| Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 0.79 |
+| RMSNorm | [x] | [x] | [x] | 0.79 |
+| LayerNorm | [x] | [x] | [x] | 0.79 |
+| SwiGLU | [x] | [x] | [x] | 0.79 |
+| Softmax | [x] | [x] | [x] | 0.79 |
+| Embedding | [x] | [x] | [x] | 0.79 |
+| MHA | [x] | [x] | [x] | 0.79 |
+| CNN1 | [x] | [x] | [x] | 0.79 |
+| CNN2 | [x] | [x] | [x] | 0.79 |
+| CNN3 | [x] | [x] | [x] | 0.79 |
+| ConvT1 | [x] | [x] | [x] | 0.79 |
+| ConvT2 | [x] | [x] | [x] | 0.79 |
+| ConvT3 | [x] | [x] | [x] | 0.79 |
+| RNN | [x] | [x] | [x] | 0.79 |
+| LSTM | [x] | [x] | [x] | 0.79 |
+| Sequential | [x] | [x] | [x] | 0.79 |
+| Residual | [x] | [x] | [x] | 0.79 |
+| KMeans | [x] | [x] | [x] | 0.79 |
+| Mamba | [x] | [x] | [x] | 0.79 |
+| Metacognition | [x] | [x] | [x] | 0.79 |
+| GDN | [x] | [x] | [x] | 0.79 |
+| Parallel | [x] | [x] | [x] | 0.79 |
+| Stack | [x] | [x] | [x] | 0.79 |
 
-**Checkpoint:** ⬜ not signed yet (CUDA).
+
+**Checkpoint:** ✅ `TestGoVCudaStepProxyTrain/StepTweenSplitSparse` PASS (69 groups, ~567s @ BENCH_ITERS=1). Shared volume evidence: section 19 (`PGB1`/`PGVO` variant 6).
 
 ---
 
@@ -2014,6 +2020,12 @@ Run: `./scripts/linux_build_w2a.sh --training-25-29-all`.
 | **0.71** | MeshTweenAlt (`MGA1`/`MGAO` Split→Tween@lr×0.5) — 154 groups; `TestGoVCudaMeshSplitModes` PASS (~1761s @ BENCH_ITERS=1). Engine board **71 / 100**. |
 | **0.72** | MeshTweenSplitFastProxy (`MGF1`/`MGFO` last-tick FastProxy) — 172 groups; `TestGoVCudaMeshSplitModes` PASS (~2119s @ BENCH_ITERS=1). Engine board **72 / 100**. |
 | **0.73** | MeshTweenSplitSparse (`MGQ1`/`MGQO` last-tick Sparse rotate) — 172 groups; `TestGoVCudaMeshSplitModes` PASS (~2107s @ BENCH_ITERS=1). Engine board **73 / 100**. |
+| **0.74** | StepTweenSplitHeadProxy (`STH1`/`STHO` Line HeadProxy) — 65 groups; `TestGoVCudaProxyTrain/StepTweenSplitHeadProxy` PASS (~561s @ BENCH_ITERS=1). Engine board **74 / 100**. |
+| **0.75** | StepTweenSplitLinear (`STL1`/`STLO` variant 2) — 69 groups; `TestGoVCudaStepProxyTrain/StepTweenSplitLinear` PASS (~584s @ BENCH_ITERS=1). Engine board **75 / 100**. |
+| **0.76** | StepTweenSplitFastProxy (`STF1`/`STFO` variant 3) — 69 groups; `TestGoVCudaStepProxyTrain/StepTweenSplitFastProxy` PASS (~568s @ BENCH_ITERS=1). Engine board **76 / 100**. |
+| **0.77** | StepTweenSplitLinearCache (`SLC1`/`SLCO` variant 4) — 76 groups; `TestGoVCudaStepProxyTrain/StepTweenSplitLinearCache` PASS (~576s @ BENCH_ITERS=1). Engine board **77 / 100**. |
+| **0.78** | StepTweenSplitHeadProxyAsync (`SHA1`/`SHAO` variant 5) — 69 groups; `TestGoVCudaStepProxyTrain/StepTweenSplitHeadProxyAsync` PASS (~567s @ BENCH_ITERS=1). Engine board **78 / 100**. |
+| **0.79** | StepTweenSplitSparse (`SSP1`/`SSPO` variant 6) — 69 groups; `TestGoVCudaStepProxyTrain/StepTweenSplitSparse` PASS (~567s @ BENCH_ITERS=1). Engine board **79 / 100**. |
 | | Tick rows + bump version as w2a `go_v_cuda` suites pass. |
 
 ## Mixed Go / C++ / CUDA routing — sign-off evidence

@@ -41,9 +41,6 @@ Status tick(stack::Layer& ops, State* st, const TensorF32& input, const TensorF3
 
   if (static_cast<int>(credit) > static_cast<int>(Credit::FamilyTweenSplitSparse))
     return gap_credit(credit);
-  if (credit != Credit::FamilyBP && credit != Credit::FamilyTween &&
-      credit != Credit::FamilyTweenSplit && credit != Credit::FamilyTweenAlt)
-    return gap_credit(credit);
 
   std::vector<stack::Child*> flat;
   stack::flatten_ops(ops, &flat);
@@ -120,49 +117,37 @@ Status tick(stack::Layer& ops, State* st, const TensorF32& input, const TensorF3
     out->popped_train = true;
 
     TensorF32 g = std::move(gy);
-    if (credit == Credit::FamilyTween || credit == Credit::FamilyTweenSplit ||
-        credit == Credit::FamilyTweenAlt) {
-      // Tween: apply_projected @ lr×0.5. Split: 1/N @ full lr. Alt: Split→Tween.
-      // gin = copy gy if same len else zeros (no chain rule).
-      for (int j = n - 1; j >= 0; --j) {
-        Status st_t;
-        const char* tag = "line tween layer ";
+    for (int j = n - 1; j >= 0; --j) {
+      auto& child = *flat[static_cast<std::size_t>(j)];
+      const auto& hop_in = fl.ins[static_cast<std::size_t>(j)];
+      const auto& hop_pre = fl.pres[static_cast<std::size_t>(j)];
+      TensorF32 next;
+      Status credit_status;
+      if (credit == Credit::FamilyBP) {
+        credit_status = stack::child_family_bp(child, g, hop_in, hop_pre, lr, &next);
+      } else {
+        // Local credits: frozen gap; gin = copy gy if same len else zeros (no chain rule).
         if (credit == Credit::FamilyTween) {
-          st_t = systems::tween::apply_projected(
-              *flat[static_cast<std::size_t>(j)], g, fl.ins[static_cast<std::size_t>(j)], lr * 0.5);
+          credit_status = systems::tween::apply_projected(child, g, hop_in, lr * 0.5);
+        } else if (credit == Credit::FamilyTweenSplit) {
+          credit_status = systems::tween_split::apply_split_child(child, g, hop_in, lr);
         } else if (credit == Credit::FamilyTweenAlt) {
-          tag = "line alt layer ";
-          st_t = systems::tween_alt::apply_alt_child(
-              *flat[static_cast<std::size_t>(j)], g, fl.ins[static_cast<std::size_t>(j)], lr, 1);
+          credit_status = systems::tween_alt::apply_alt_child(child, g, hop_in, lr, 1);
         } else {
-          tag = "line split layer ";
-          st_t = systems::tween_split::apply_split_child(
-              *flat[static_cast<std::size_t>(j)], g, fl.ins[static_cast<std::size_t>(j)], lr);
+          // Line credits 4..9 → shared proxy variants 1..6 (HeadProxy…Sparse).
+          const auto variant = static_cast<systems::tween_split::Variant>(
+              static_cast<int>(credit) - static_cast<int>(Credit::FamilyTweenSplitHeadProxy) + 1);
+          credit_status = systems::tween_split::apply_variant_child(child, g, hop_in, lr, variant);
         }
-        if (!st_t) {
-          return Status::Err(st_t.code, std::string(tag) + std::to_string(j) + ": " + st_t.message);
-        }
-        TensorF32 next;
-        next.shape = fl.ins[static_cast<std::size_t>(j)].shape;
-        next.data.assign(fl.ins[static_cast<std::size_t>(j)].data.size(), 0.0f);
-        if (g.data.size() == next.data.size()) {
-          next.data = g.data;
-        }
-        g = std::move(next);
+        next.shape = hop_in.shape;
+        next.data.assign(hop_in.data.size(), 0.0f);
+        if (g.data.size() == next.data.size()) next.data = g.data;
       }
-    } else {
-      // FamilyBP (StepBP): reverse child_family_bp @ full lr with true gin.
-      for (int j = n - 1; j >= 0; --j) {
-        TensorF32 next;
-        if (auto credit_status =
-                stack::child_family_bp(*flat[static_cast<std::size_t>(j)], g,
-                                       fl.ins[static_cast<std::size_t>(j)],
-                                       fl.pres[static_cast<std::size_t>(j)], lr, &next);
-            !credit_status) {
-          return credit_status;
-        }
-        g = std::move(next);
+      if (!credit_status) {
+        return Status::Err(credit_status.code, std::string("line credit layer ") +
+                                                   std::to_string(j) + ": " + credit_status.message);
       }
+      g = std::move(next);
     }
   }
   st->flights = std::move(alive);

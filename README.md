@@ -8,7 +8,7 @@ It will run directly from C++ and through a stable C ABI. Go Welvet can later de
 
 | | |
 |--|--|
-| **Version** | **`0.73`** |
+| **Version** | **`0.79`** |
 | **Engine board** | **67 / 100** (same 10 categories as Go Welvet) |
 | **Compute** | NVIDIA GPU (CUDA) — primary · CPU / Metal / QNN siblings remain separate repos — never implied |
 | **Parity reference** | [welvet](https://github.com/openfluke/welvet) Go **v1.2.0** (100/100) |
@@ -22,7 +22,7 @@ It will run directly from C++ and through a stable C ABI. Go Welvet can later de
 ```bash
 ./scripts/build_linux.sh
 ./build/example_cuda_smoke
-./build/welvet_dense_fwd --version   # 0.73
+./build/welvet_dense_fwd --version   # 0.79
 ./build/welvet_dense_fwd --identity
 ./build/welvet_dense_fwd --gaps
 ./scripts/linux_build_w2a.sh --leaf-fwd-all
@@ -49,7 +49,8 @@ It will run directly from C++ and through a stable C ABI. Go Welvet can later de
 | ModeTween / ModeTweenChain / ModeTweenSplit / ModeStepTweenSplit / ModeTweenAlt / ModeStepTweenAlt / MeshTween / MeshTweenChain / StepTween / StepTweenChain | ✅ 130 / 130 / 131 / 130 / 130 / 130 / 159 / 160 / 130 / 130 |
 | ModeTweenSplitHeadProxy / Linear / FastProxy / LinearCache / HeadProxyAsync / Sparse | ✅ ProxyTrain + ProxyVolume (sparse: 65/69) |
 | MeshTweenSplit / Alt / FastProxy / Sparse | ✅ `TestGoVCudaMeshSplitModes` 154+154+172+172 |
-| Remaining Tween* (Step proxy) / CamSync / other systems / model | ⬜ |
+| StepTweenSplit HeadProxy / Linear / FastProxy / LinearCache / Async / Sparse | ✅ ProxyTrain 65 + StepProxyTrain 69/69/76/69/69 |
+| CamSync / Freeze/Shadow / other systems / model | ⬜ |
 
 ---
 
@@ -198,9 +199,9 @@ Identical ten categories / weights as Go Welvet. Credit only from **this** CUDA 
 | 6 | **Runtime + architecture** — volumetric grid, forward, backward, training, step/mesh | 8 | Volume NormalBP + Step/Mesh/Tween* Line clocks + proxy volumes | ✅ | **8** |
 | 7 | **Systems** — dna, evolution, tween, tanhi, telemetry | 5 | systems/tween* (+ HeadProxy…Sparse leaf/volume) + tween_alt | 🚧 | **5** |
 | 8 | **Model / IO** — tokenizer, entity, transformer, sampling, hf | 8 | — | ⬜ | **0** |
-| 9 | **Training credit** — 29 modes + cameral BranchModes / CamSync | 8 | … + all MeshTween* Split/Alt/proxy; Step proxy + CamSync open | 🚧 | **8** |
+| 9 | **Training credit** — 29 modes + cameral BranchModes / CamSync | 8 | … + all MeshTween* + StepTweenSplit HeadProxy…Sparse; CamSync/Freeze open | 🚧 | **8** |
 | 10 | **Peak fused / no host ALU** — fused CUDA kernels, decoder fuse, provenance | 14 | — | ⬜ | **0** |
-| | **Total → version** | **100** | | **🚧** | **73 / 100 → `0.73`** |
+| | **Total → version** | **100** | | **🚧** | **79 / 100 → `0.79`** |
 
 **Path to 1.0:** same order Go used / welvet.cpp is following — Dense FormatNone + NormalBP → layers → Step/Mesh/Tween* → Systems + Model/IO → CamSync + peak fused CUDA. welvet.cpp’s ✅ list is the **port order**, not transferred credit.
 
@@ -489,12 +490,12 @@ Tick **Inside node** (`1×1×1`) and **3D volumetric** separately. **Signed** = 
 | 21 | TweenSplitSparse | TweenSplit | ✅ | ✅ | ✅ | 0.69 |
 | 22 | MeshTweenSplitFastProxy | TweenSplit | ✅ | ✅ | ✅ | 0.72 |
 | 23 | MeshTweenSplitSparse | TweenSplit | ✅ | ✅ | ✅ | 0.73 |
-| 24 | StepTweenSplitHeadProxy | TweenSplit | ⬜ | ⬜ | ⬜ | |
-| 25 | StepTweenSplitLinear | TweenSplit | ⬜ | ⬜ | ⬜ | |
-| 26 | StepTweenSplitFastProxy | TweenSplit | ⬜ | ⬜ | ⬜ | |
-| 27 | StepTweenSplitLinearCache | TweenSplit | ⬜ | ⬜ | ⬜ | |
-| 28 | StepTweenSplitHeadProxyAsync | TweenSplit | ⬜ | ⬜ | ⬜ | |
-| 29 | StepTweenSplitSparse | TweenSplit | ⬜ | ⬜ | ⬜ | |
+| 24 | StepTweenSplitHeadProxy | TweenSplit | ✅ | ✅ | ✅ | 0.74 |
+| 25 | StepTweenSplitLinear | TweenSplit | ✅ | ✅ | ✅ | 0.75 |
+| 26 | StepTweenSplitFastProxy | TweenSplit | ✅ | ✅ | ✅ | 0.76 |
+| 27 | StepTweenSplitLinearCache | TweenSplit | ✅ | ✅ | ✅ | 0.77 |
+| 28 | StepTweenSplitHeadProxyAsync | TweenSplit | ✅ | ✅ | ✅ | 0.78 |
+| 29 | StepTweenSplitSparse | TweenSplit | ✅ | ✅ | ✅ | 0.79 |
 | — | Freeze | Freeze | ⬜ | ⬜ | ⬜ | |
 | — | Shadow | Freeze | ⬜ | ⬜ | ⬜ | |
 | — | Adversarial | BP-gated | ⬜ | ⬜ | ⬜ | |

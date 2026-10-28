@@ -31,6 +31,12 @@
 | **0.71** | MeshTweenAlt (`TestGoVCudaMeshSplitModes` 154; MGA1/MGAO Split→Tween@lr×0.5) |
 | **0.72** | MeshTweenSplitFastProxy (`TestGoVCudaMeshSplitModes` 172; MGF1/MGFO) |
 | **0.73** | MeshTweenSplitSparse (`TestGoVCudaMeshSplitModes` 172; MGQ1/MGQO) |
+| **0.74** | StepTweenSplitHeadProxy (`TestGoVCudaProxyTrain/StepTweenSplitHeadProxy` 65; STH1/STHO) |
+| **0.75** | StepTweenSplitLinear (`TestGoVCudaStepProxyTrain/StepTweenSplitLinear` 69; STL1/STLO) |
+| **0.76** | StepTweenSplitFastProxy (`TestGoVCudaStepProxyTrain/StepTweenSplitFastProxy` 69; STF1/STFO) |
+| **0.77** | StepTweenSplitLinearCache (`TestGoVCudaStepProxyTrain/StepTweenSplitLinearCache` 76; SLC1/SLCO) |
+| **0.78** | StepTweenSplitHeadProxyAsync (`TestGoVCudaStepProxyTrain/StepTweenSplitHeadProxyAsync` 69; SHA1/SHAO) |
+| **0.79** | StepTweenSplitSparse (`TestGoVCudaStepProxyTrain/StepTweenSplitSparse` 69; SSP1/SSPO) |
 | **0.x** | `round(earned)` from the engine table in [README.md](README.md) |
 | **1.0.0** | Engine board **100/100** — full Go parity on NVIDIA GPU (FormatNone path + Model/IO + Systems + CamSync + peak fused, or explicit gate rewrite) |
 

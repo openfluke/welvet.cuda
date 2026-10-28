@@ -3,7 +3,7 @@
 **Authoritative checklist:** [README.md](README.md).  
 **Training detail:** [docs/TRAINING_CHECKLIST.md](docs/TRAINING_CHECKLIST.md).
 
-**Version `0.73`** — engine board **73 / 100**. Dump: `welvet_dense_fwd --gaps`.
+**Version `0.79`** — engine board **79 / 100**. Dump: `welvet_dense_fwd --gaps`.
 
 ```bash
 ./scripts/build_linux.sh
@@ -56,9 +56,15 @@
 | **MeshTweenAlt** | MGA1/MGAO Split→Tween@lr×0.5 — 154 groups — `TestGoVCudaMeshSplitModes` PASS |
 | **MeshTweenSplitFastProxy** | MGF1/MGFO last-tick FastProxy — 172 groups — `TestGoVCudaMeshSplitModes` PASS |
 | **MeshTweenSplitSparse** | MGQ1/MGQO last-tick Sparse rotate — 172 groups — `TestGoVCudaMeshSplitModes` PASS |
+| **StepTweenSplitHeadProxy** | STH1/STHO Line HeadProxy — 65 groups — `TestGoVCudaProxyTrain/StepTweenSplitHeadProxy` PASS |
+| **StepTweenSplitLinear** | STL1/STLO variant 2 — 69 groups — `TestGoVCudaStepProxyTrain/StepTweenSplitLinear` PASS |
+| **StepTweenSplitFastProxy** | STF1/STFO variant 3 — 69 groups — `TestGoVCudaStepProxyTrain/StepTweenSplitFastProxy` PASS |
+| **StepTweenSplitLinearCache** | SLC1/SLCO variant 4 — 76 groups — `TestGoVCudaStepProxyTrain/StepTweenSplitLinearCache` PASS |
+| **StepTweenSplitHeadProxyAsync** | SHA1/SHAO variant 5 — 69 groups — `TestGoVCudaStepProxyTrain/StepTweenSplitHeadProxyAsync` PASS |
+| **StepTweenSplitSparse** | SSP1/SSPO variant 6 — 69 groups — `TestGoVCudaStepProxyTrain/StepTweenSplitSparse` PASS |
 
 ## Open
 
-Remaining Tween* (Step proxy…) / CamSync / Freeze/Shadow / other systems / model / lucy / peak fused / NAC / Windows / packed quants. See README.
+CamSync / Freeze/Shadow / other systems / model / lucy / peak fused / NAC / Windows / packed quants. See README.
 
 Live counters: `./build/welvet_dense_fwd --gaps`.
