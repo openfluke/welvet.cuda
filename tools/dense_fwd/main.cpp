@@ -49,6 +49,7 @@
 //   STKV — Volume Stack NestedStack-of-Dense NormalBP → STVO; --bench → WVB1
 //   STB1 — Line StepBP FamilyBP → STBO; --bench → WVB1
 //   STW1 — Line StepTween FamilyTween → STWO; --bench → WVB1
+//   STC1 — Line StepTweenChain FamilyBP → STCO; --bench → WVB1
 //   STS1 — Line StepTweenSplit FamilyTweenSplit → STSO; --bench → WVB1
 //   TAB1 — ModeTweenAlt leaf stack → TABO; volumes TAV1/TRA1…/KMAL/PNAL
 //   STA1 — Line StepTweenAlt FamilyTweenAlt → STAO; --bench → WVB1
@@ -1314,6 +1315,8 @@ int main(int argc, char** argv) {
   if (std::memcmp(magic, "STB1", 4) == 0) return run_stepbp(bench_iters);
   if (std::memcmp(magic, "STW1", 4) == 0)
     return run_stepbp(bench_iters, welvet::runtime::line::Credit::FamilyTween, "STWO");
+  if (std::memcmp(magic, "STC1", 4) == 0)
+    return run_stepbp(bench_iters, welvet::runtime::line::Credit::FamilyBP, "STCO");
   if (std::memcmp(magic, "STS1", 4) == 0)
     return run_stepbp(bench_iters, welvet::runtime::line::Credit::FamilyTweenSplit, "STSO");
   if (std::memcmp(magic, "STA1", 4) == 0)

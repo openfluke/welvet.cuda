@@ -63,6 +63,7 @@ usage: $0 [flags]
   --meshtween-train   MeshTween MTW1/MGW1 + ModeTween volumes (TestGoVCudaMeshTweenTrain)
   --meshtweenchain-train  MeshTweenChain MTC1/MGC1 + TweenChain volumes (TestGoVCudaMeshTweenChainTrain)
   --steptween-train  ModeStepTween STW1/STWO + Tween volumes (TestGoVCudaStepTweenTrain)
+  --steptweenchain-train  ModeStepTweenChain STC1/STCO + TweenChain volumes (TestGoVCudaStepTweenChainTrain)
   --help
 EOF
 }
@@ -73,7 +74,7 @@ if [[ $# -gt 0 ]]; then
     --help|-h) usage; exit 0 ;;
     --smoke) MODE=smoke; shift ;;
     --gaps) MODE=gaps; shift ;;
-    --dense-fwd|--rmsnorm-fwd|--layernorm-fwd|--softmax-fwd|--swiglu-fwd|--embedding-fwd|--mha-fwd|--cnn-fwd|--convt-fwd|--rnn-fwd|--lstm-fwd|--sequential-fwd|--residual-fwd|--mamba-fwd|--metacognition-fwd|--gdn-fwd|--kmeans-fwd|--parallel-fwd|--seqmix-fwd|--leaf-fwd-all|--dense-train|--rmsnorm-train|--layernorm-train|--softmax-train|--swiglu-train|--embedding-train|--mha-train|--cnn-train|--convt-train|--rnn-train|--lstm-train|--sequential-train|--residual-train|--stack-train|--mamba-train|--metacognition-train|--gdn-train|--kmeans-train|--parallel-train|--normalbp-all|--stepbp-train|--meshbp-train|--tween-train|--tweenchain-train|--tweensplit-train|--steptweensplit-train|--tweenalt-train|--steptweenalt-train|--meshtween-train|--meshtweenchain-train|--steptween-train)
+    --dense-fwd|--rmsnorm-fwd|--layernorm-fwd|--softmax-fwd|--swiglu-fwd|--embedding-fwd|--mha-fwd|--cnn-fwd|--convt-fwd|--rnn-fwd|--lstm-fwd|--sequential-fwd|--residual-fwd|--mamba-fwd|--metacognition-fwd|--gdn-fwd|--kmeans-fwd|--parallel-fwd|--seqmix-fwd|--leaf-fwd-all|--dense-train|--rmsnorm-train|--layernorm-train|--softmax-train|--swiglu-train|--embedding-train|--mha-train|--cnn-train|--convt-train|--rnn-train|--lstm-train|--sequential-train|--residual-train|--stack-train|--mamba-train|--metacognition-train|--gdn-train|--kmeans-train|--parallel-train|--normalbp-all|--stepbp-train|--meshbp-train|--tween-train|--tweenchain-train|--tweensplit-train|--steptweensplit-train|--tweenalt-train|--steptweenalt-train|--meshtween-train|--meshtweenchain-train|--steptween-train|--steptweenchain-train)
       MODE="${1#--}"; shift ;;
     *)
       echo "unknown flag '$1'" >&2
@@ -170,4 +171,5 @@ case "$MODE" in
   meshtween-train) run_go_test '^(TestGoVCudaMeshTweenTrain|TestGoVCudaMeshBPTrain|TestGoVCudaTweenTrain)$' ;;
   meshtweenchain-train) run_go_test '^(TestGoVCudaMeshTweenChainTrain|TestGoVCudaMeshTweenTrain|TestGoVCudaTweenChainTrain)$' ;;
   steptween-train) run_go_test '^(TestGoVCudaStepTweenTrain|TestGoVCudaTweenTrain)$' ;;
+  steptweenchain-train) run_go_test '^(TestGoVCudaStepTweenChainTrain|TestGoVCudaTweenChainTrain)$' ;;
 esac

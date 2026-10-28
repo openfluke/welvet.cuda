@@ -104,6 +104,8 @@ const std::vector<Entry>& build() {
        "TrainStackMSE ModeTweenSplit (OpenSplitTape 1/N)", true},
       {"runtime.line.family_tween", "runtime",
        "Line FamilyTween on pop (STW1/STWO; apply_projected @ lr×0.5)", true},
+      {"runtime.line.family_tween_chain", "runtime",
+       "Line StepTweenChain FamilyBP alias (STC1/STCO ≡ StepBP on pop @ full lr)", true},
       {"runtime.line.family_tween_split", "runtime",
        "Line FamilyTweenSplit on pop (STS1/STSO; apply_split_child 1/N @ full lr)", true},
       {"systems.tween_alt", "systems",
