@@ -3,7 +3,7 @@
 **Authoritative checklist:** [README.md](README.md).  
 **Training detail:** [docs/TRAINING_CHECKLIST.md](docs/TRAINING_CHECKLIST.md).
 
-**Version `0.67`** — engine board **67 / 100**. Dump: `welvet_dense_fwd --gaps`.
+**Version `0.68`** — engine board **68 / 100**. Dump: `welvet_dense_fwd --gaps`.
 
 ```bash
 ./scripts/build_linux.sh
@@ -49,9 +49,10 @@
 | **ModeTweenSplitLinear** | GPB1/GPBO + PGB1/PGVO variant 2 — 65 leaf + 69 volume — `TestGoVCudaProxyTrain`/`ProxyVolumeTrain` PASS |
 | **ModeTweenSplitFastProxy** | GPB1/GPBO + PGB1/PGVO variant 3 — 65 leaf + 69 volume — `TestGoVCudaProxyTrain`/`ProxyVolumeTrain` PASS |
 | **ModeTweenSplitLinearCache** | GPB1/GPBO + PGB1/PGVO variant 4 — 88 leaf + 92 volume (incl. epoch-22 refresh) — PASS |
+| **ModeTweenSplitHeadProxyAsync** | GPB1/GPBO + PGB1/PGVO variant 5 — 65 leaf + 69 volume (4-epoch stale reuse) — PASS |
 
 ## Open
 
-Remaining Tween* (HeadProxyAsync/sparse + Mesh/Step proxy…) / CamSync / Freeze/Shadow / other systems / model / lucy / peak fused / NAC / Windows / packed quants. See README.
+Remaining Tween* (Sparse + Mesh/Step proxy…) / CamSync / Freeze/Shadow / other systems / model / lucy / peak fused / NAC / Windows / packed quants. See README.
 
 Live counters: `./build/welvet_dense_fwd --gaps`.

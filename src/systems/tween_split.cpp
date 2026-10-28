@@ -570,6 +570,44 @@ int accel_every(const stack::SplitAccel* acc) {
   return acc->cache_every;
 }
 
+// Go HeadProxyAsync: stale accel.proxy → hidden 1/(N−1); head GradWOnly; then
+// linearGradIn on *updated* head W and store; first epoch also applies fresh proxy.
+Status apply_head_proxy_async_leaves(std::vector<Leaf>& leaves, const TensorF32& grad_out, double lr,
+                                     stack::SplitAccel* accel) {
+  const int n = static_cast<int>(leaves.size());
+  if (n == 0) return Status::Ok();
+  Leaf& head = leaves[static_cast<std::size_t>(n - 1)];
+  if (head.post.data.empty()) return apply_leaves(leaves, grad_out, lr);
+
+  const bool stale = accel && !accel->proxy.empty() && n > 1;
+  if (stale) {
+    TensorF32 src;
+    src.shape = {static_cast<int64_t>(accel->proxy.size())};
+    src.data = accel->proxy;
+    const double scale = 1.0 / static_cast<double>(n - 1);
+    if (auto st = apply_hidden_dw_only(leaves, 0, n - 1, src, scale, lr); !st) {
+      return Status::Err(st.code, std::string("tween_split headproxyasync stale: ") + st.message);
+    }
+  }
+
+  TensorF32 g_head;
+  if (auto st = systems::tween::project_gap(grad_out, head.post.shape, &g_head); !st) return st;
+  if (auto st = leaf_dw_linear(head, g_head, lr); !st) {
+    return Status::Err(st.code, std::string("tween_split headproxyasync head: ") + st.message);
+  }
+
+  TensorF32 proxy;
+  if (auto st = linear_grad_in_leaf_nopre(head, grad_out, &proxy); !st) {
+    return Status::Err(st.code, std::string("tween_split headproxyasync proxy: ") + st.message);
+  }
+  if (accel && !proxy.data.empty()) accel->proxy = proxy.data;
+
+  if (n <= 1 || stale) return Status::Ok();
+  const TensorF32& src = proxy.data.empty() ? grad_out : proxy;
+  const double scale = 1.0 / static_cast<double>(n - 1);
+  return apply_hidden_dw_only(leaves, 0, n - 1, src, scale, lr);
+}
+
 // Go LinearCache: hit rescales cached P(gy) by live/cacheNorm then 1/N GradWOnly;
 // miss runs linear walk, fills cache, stores gap norm.
 Status apply_linear_cache_leaves(std::vector<Leaf>& leaves, const TensorF32& grad_out, double lr,
@@ -631,6 +669,9 @@ Status apply_variant_leaves(std::vector<Leaf>& leaves, const TensorF32& gy, doub
   if (variant == Variant::FastProxy) return apply_fast_proxy_leaves(leaves, gy, lr);
   if (variant == Variant::LinearCache) {
     return apply_linear_cache_leaves(leaves, gy, lr, accel, root, child);
+  }
+  if (variant == Variant::HeadProxyAsync) {
+    return apply_head_proxy_async_leaves(leaves, gy, lr, accel);
   }
   return Status::Gap(std::string("tween_split variant ") +
                      std::to_string(static_cast<int>(variant)) + " not wired on CUDA yet");
