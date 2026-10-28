@@ -486,6 +486,74 @@ Status apply_linear_leaves(std::vector<Leaf>& leaves, const TensorF32& grad_out,
   return Status::Ok();
 }
 
+// Go FastProxy: linearGradInAny(op, gy, in, nil) — Dense Wᵀ; else Backward with nil pre → P(gy).
+Status linear_grad_in_leaf_nopre(Leaf& leaf, const TensorF32& gy, TensorF32* gx_out) {
+  if (!gx_out) return Status::Err(StatusCode::InvalidArgument, "tween_split fastproxy: nil gx");
+  *gx_out = TensorF32{};
+  if (gy.data.empty() || leaf.input.data.empty()) return Status::Ok();
+  if (auto* d = dense_of(leaf)) return dense::linear_grad_in(*d, gy, leaf.input, gx_out);
+
+  // Match metal leaf_linear(nil_pre): most Ops reject nil pre → project; a few accept it.
+  auto kind = leaf.child ? static_cast<int>(leaf.child->kind)
+                         : leaf.cell ? static_cast<int>(leaf.cell->op_kind) : -1;
+  const bool try_nil =
+      kind == static_cast<int>(stack::Kind::Embedding) ||
+      kind == static_cast<int>(stack::Kind::Mamba) || kind == static_cast<int>(stack::Kind::GDN) ||
+      kind == static_cast<int>(stack::Kind::Metacognition) ||
+      kind == static_cast<int>(stack::Kind::NestedStack) ||
+      kind == static_cast<int>(stack::Kind::Parallel);
+  if (!try_nil) return systems::tween::project_gap(gy, leaf.input.shape, gx_out);
+
+  TensorF32 empty_pre;
+  TensorF32 dW;
+  Status st = Status::Ok();
+  if (leaf.child) {
+    st = stack::child_family_bp(*leaf.child, gy, leaf.input, empty_pre, 0.0, gx_out);
+  } else if (leaf.cell) {
+    st = runtime::backward::cell(*leaf.cell, gy, leaf.input, empty_pre, gx_out, &dW);
+  }
+  if (!st || gx_out->data.empty()) {
+    return systems::tween::project_gap(gy, leaf.input.shape, gx_out);
+  }
+  return Status::Ok();
+}
+
+Status apply_hidden_dw_only(std::vector<Leaf>& leaves, int begin, int end, const TensorF32& src,
+                            double scale, double lr) {
+  for (int i = begin; i < end; ++i) {
+    Leaf& leaf = leaves[static_cast<std::size_t>(i)];
+    if (leaf.post.data.empty()) continue;
+    TensorF32 gi;
+    if (auto st = systems::tween::project_gap(src, leaf.post.shape, &gi); !st) return st;
+    scale_gap(&gi, scale);
+    if (auto st = leaf_dw_linear(leaf, gi, lr); !st) {
+      return Status::Err(st.code, std::string("tween_split fastproxy hidden: ") + st.message);
+    }
+  }
+  return Status::Ok();
+}
+
+// Go trainTweenSplitFastProxyLeaves: proxy before head SGD; hidden 1/(N−1) GradWOnly.
+Status apply_fast_proxy_leaves(std::vector<Leaf>& leaves, const TensorF32& grad_out, double lr) {
+  const int n = static_cast<int>(leaves.size());
+  if (n == 0) return Status::Ok();
+  Leaf& head = leaves[static_cast<std::size_t>(n - 1)];
+  if (head.post.data.empty()) return apply_leaves(leaves, grad_out, lr);
+  TensorF32 proxy;
+  if (auto st = linear_grad_in_leaf_nopre(head, grad_out, &proxy); !st) {
+    return Status::Err(st.code, std::string("tween_split fastproxy: ") + st.message);
+  }
+  TensorF32 g_head;
+  if (auto st = systems::tween::project_gap(grad_out, head.post.shape, &g_head); !st) return st;
+  if (auto st = leaf_dw_linear(head, g_head, lr); !st) {
+    return Status::Err(st.code, std::string("tween_split fastproxy head: ") + st.message);
+  }
+  if (n == 1) return Status::Ok();
+  const TensorF32& src = proxy.data.empty() ? grad_out : proxy;
+  const double scale = 1.0 / static_cast<double>(n - 1);
+  return apply_hidden_dw_only(leaves, 0, n - 1, src, scale, lr);
+}
+
 Status apply_variant_leaves(std::vector<Leaf>& leaves, const TensorF32& gy, double lr,
                             Variant variant, stack::Layer* root = nullptr,
                             stack::Child* child = nullptr) {
@@ -497,6 +565,7 @@ Status apply_variant_leaves(std::vector<Leaf>& leaves, const TensorF32& gy, doub
   if (variant == Variant::Linear) {
     return apply_linear_leaves(leaves, gy, lr, nullptr, root, child);
   }
+  if (variant == Variant::FastProxy) return apply_fast_proxy_leaves(leaves, gy, lr);
   return Status::Gap(std::string("tween_split variant ") +
                      std::to_string(static_cast<int>(variant)) + " not wired on CUDA yet");
 }

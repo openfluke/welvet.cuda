@@ -3,7 +3,7 @@
 **Authoritative checklist:** [README.md](README.md).  
 **Training detail:** [docs/TRAINING_CHECKLIST.md](docs/TRAINING_CHECKLIST.md).
 
-**Version `0.65`** — engine board **65 / 100**. Dump: `welvet_dense_fwd --gaps`.
+**Version `0.66`** — engine board **66 / 100**. Dump: `welvet_dense_fwd --gaps`.
 
 ```bash
 ./scripts/build_linux.sh
@@ -47,9 +47,10 @@
 | **ModeStepTweenChain** | STC1/STCO Line FamilyBP alias + TweenChain volumes — 130 groups — `TestGoVCudaStepTweenChainTrain` PASS |
 | **ModeTweenSplitHeadProxy** | GPB1/GPBO + PGB1/PGVO variant 1 — 65 leaf + 69 volume — `TestGoVCudaProxyTrain`/`ProxyVolumeTrain` PASS |
 | **ModeTweenSplitLinear** | GPB1/GPBO + PGB1/PGVO variant 2 — 65 leaf + 69 volume — `TestGoVCudaProxyTrain`/`ProxyVolumeTrain` PASS |
+| **ModeTweenSplitFastProxy** | GPB1/GPBO + PGB1/PGVO variant 3 — 65 leaf + 69 volume — `TestGoVCudaProxyTrain`/`ProxyVolumeTrain` PASS |
 
 ## Open
 
-Remaining Tween* (FastProxy/cache/async/sparse + Mesh/Step proxy…) / CamSync / Freeze/Shadow / other systems / model / lucy / peak fused / NAC / Windows / packed quants. See README.
+Remaining Tween* (LinearCache/async/sparse + Mesh/Step proxy…) / CamSync / Freeze/Shadow / other systems / model / lucy / peak fused / NAC / Windows / packed quants. See README.
 
 Live counters: `./build/welvet_dense_fwd --gaps`.

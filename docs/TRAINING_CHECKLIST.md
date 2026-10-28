@@ -9,8 +9,8 @@ Canonical enum: Go `layers/parallel/train_mode.go` (`TrainMode`).
 and [`welvet.cpp/docs/TRAINING_CHECKLIST.md`](../../welvet.cpp/docs/TRAINING_CHECKLIST.md).
 Same cases / wires / column meanings; status here is **CUDA** only. metal/cpp checkmarks do **not** transfer credit.
 
-**Current engine:** `0.65` (… + ModeTweenSplitHeadProxy + **ModeTweenSplitLinear signed** — **65 / 100** on the engine board).
-Leaf forward + NormalBP leaf/volume signed for all 23 layer kinds (+ seqmix metadata). Prior mode suites PASS. `TestGoVCudaProxyTrain` / `ProxyVolumeTrain` PASS for HeadProxy + Linear (65 leaf + 69 volume each). Remaining Tween* variants / CamSync remain open.
+**Current engine:** `0.66` (… + HeadProxy + Linear + **ModeTweenSplitFastProxy signed** — **66 / 100** on the engine board).
+Prior mode suites PASS. `TestGoVCudaProxyTrain` / `ProxyVolumeTrain` PASS for HeadProxy + Linear + FastProxy (65 leaf + 69 volume each). Remaining Tween* variants / CamSync remain open.
 
 ---
 
@@ -1469,31 +1469,31 @@ Wires: `GPB1`/`GPBO` (variant 3); `PGB1`/`PGVO` for actual-type volumes. Tests: 
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [ ] | [ ] | |
-| Residual | [ ] | [ ] | [ ] | |
-| KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
-| Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 0.66 |
+| RMSNorm | [x] | [x] | [x] | 0.66 |
+| LayerNorm | [x] | [x] | [x] | 0.66 |
+| SwiGLU | [x] | [x] | [x] | 0.66 |
+| Softmax | [x] | [x] | [x] | 0.66 |
+| Embedding | [x] | [x] | [x] | 0.66 |
+| MHA | [x] | [x] | [x] | 0.66 |
+| CNN1 | [x] | [x] | [x] | 0.66 |
+| CNN2 | [x] | [x] | [x] | 0.66 |
+| CNN3 | [x] | [x] | [x] | 0.66 |
+| ConvT1 | [x] | [x] | [x] | 0.66 |
+| ConvT2 | [x] | [x] | [x] | 0.66 |
+| ConvT3 | [x] | [x] | [x] | 0.66 |
+| RNN | [x] | [x] | [x] | 0.66 |
+| LSTM | [x] | [x] | [x] | 0.66 |
+| Sequential | [x] | [x] | [x] | 0.66 |
+| Residual | [x] | [x] | [x] | 0.66 |
+| KMeans | [x] | [x] | [x] | 0.66 |
+| Mamba | [x] | [x] | [x] | 0.66 |
+| Metacognition | [x] | [x] | [x] | 0.66 |
+| GDN | [x] | [x] | [x] | 0.66 |
+| Parallel | [x] | [x] | [x] | 0.66 |
+| Stack | [x] | [x] | [x] | 0.66 |
 
-**Checkpoint:** ⬜ not signed yet (CUDA).
+**Checkpoint:** ✅ `TestGoVCudaProxyTrain/TweenSplitFastProxy` PASS (65 groups, ~546s @ BENCH_ITERS=1); `TestGoVCudaProxyVolumeTrain/TweenSplitFastProxy` PASS (69 groups, ~729s @ BENCH_ITERS=1).
 
 ---
 
@@ -2006,6 +2006,7 @@ Run: `./scripts/linux_build_w2a.sh --training-25-29-all`.
 | **0.63** | ModeStepTweenChain Line FamilyBP alias (`STC1`/`STCO` ≡ StepBP) — 130 groups; `TestGoVCudaStepTweenChainTrain` PASS (~729s @ BENCH_ITERS=1). Engine board **63 / 100**. |
 | **0.64** | ModeTweenSplitHeadProxy (`GPB1`/`GPBO` + `PGB1`/`PGVO` variant 1) — 65 leaf + 69 volume; `TestGoVCudaProxyTrain`/`ProxyVolumeTrain` PASS (~548s / ~728s @ BENCH_ITERS=1). Engine board **64 / 100**. |
 | **0.65** | ModeTweenSplitLinear (`GPB1`/`GPBO` + `PGB1`/`PGVO` variant 2; reverse walk 1/N + LinearGradIn) — 65 leaf + 69 volume; PASS (~548s / ~733s @ BENCH_ITERS=1). Engine board **65 / 100**. |
+| **0.66** | ModeTweenSplitFastProxy (`GPB1`/`GPBO` + `PGB1`/`PGVO` variant 3; linear head proxy then hidden 1/(N−1)) — 65 leaf + 69 volume; PASS (~546s / ~729s @ BENCH_ITERS=1). Engine board **66 / 100**. |
 | | Tick rows + bump version as w2a `go_v_cuda` suites pass. |
 
 ## Mixed Go / C++ / CUDA routing — sign-off evidence
