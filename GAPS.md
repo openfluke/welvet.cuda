@@ -65,6 +65,6 @@
 
 ## Open
 
-CamSync / Freeze/Shadow / other systems / model / lucy / peak fused / NAC / Windows / packed quants. See README.
+CamSync / Freeze/Shadow / other systems / model / lucy / peak fused / NAC / packed quants. Windows amd64 DLL shipped. See README.
 
 Live counters: `./build/welvet_dense_fwd --gaps`.

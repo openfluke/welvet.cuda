@@ -173,7 +173,7 @@ const std::vector<Entry>& build() {
       {"lucy.lpd", "lucy", "gap? Lucy/LPD", false},
 
       // --- Delivery / validation ---
-      {"platform.windows", "platform", "gap? Windows CUDA artifact", false},
+      {"platform.windows", "platform", "Windows amd64 CUDA host build (libwelvet_cuda.dll)", true},
       {"w2a.go_v_cuda", "interop", "w2a Go_v_Cuda Dense forward parity + speed", true},
       {"nac.go_delegate", "interop", "gap? Go Welvet NAC → CUDA dispatch", false},
       {"determinism.policy", "cuda", "gap? documented reduction order + exact_bit bands", false},

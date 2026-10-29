@@ -9,7 +9,7 @@ endif()
 project(welvet_cuda VERSION 0.79 LANGUAGES CXX CUDA)
 
 # NVIDIA CUDA-only Welvet engine: C++ host + CUDA kernels.
-# Linux x86_64 is the primary host; Windows is a later artifact.
+# Host artifacts: Linux x86_64 (.so) and Windows amd64 (.dll).
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -95,12 +95,18 @@ target_include_directories(welvet_cuda_obj
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 target_compile_definitions(welvet_cuda_obj PRIVATE WELVET_CUDA=1)
+if(WELVET_BUILD_SHARED)
+  target_compile_definitions(welvet_cuda_obj PRIVATE WELVET_BUILD_SHARED WELVET_EXPORTS)
+endif()
 target_link_libraries(welvet_cuda_obj PUBLIC CUDA::cudart)
 # Match welvet.cpp / Go: disable FMA contraction so host Softmax/KMeans/Parallel
 # double paths stay bit-stable vs Go (see kmeans.cpp comment).
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(welvet_cuda_obj PRIVATE
     $<$<COMPILE_LANGUAGE:CXX>:-ffp-contract=off>)
+elseif(MSVC)
+  target_compile_options(welvet_cuda_obj PRIVATE
+    $<$<COMPILE_LANGUAGE:CXX>:/fp:precise>)
 endif()
 
 if(WELVET_BUILD_SHARED)
@@ -121,6 +127,27 @@ set_target_properties(welvet PROPERTIES
   POSITION_INDEPENDENT_CODE ON
   CUDA_SEPARABLE_COMPILATION ON
 )
+if(WIN32)
+  # Match Linux artifact name: libwelvet_cuda.so → libwelvet_cuda.dll
+  set_target_properties(welvet PROPERTIES PREFIX "lib")
+  if(WELVET_BUILD_SHARED)
+    target_compile_definitions(welvet PRIVATE WELVET_BUILD_SHARED WELVET_EXPORTS)
+  endif()
+endif()
+
+# On Windows, the shared DLL only exports the C ABI (WELVET_API). Tools and
+# examples need the C++ API, so they link the object library there instead.
+function(welvet_link_engine target)
+  if(WIN32)
+    target_link_libraries(${target} PRIVATE welvet_cuda_obj CUDA::cudart)
+    set_target_properties(${target} PROPERTIES
+      CUDA_RESOLVE_DEVICE_SYMBOLS ON
+      CUDA_SEPARABLE_COMPILATION ON
+    )
+  else()
+    target_link_libraries(${target} PRIVATE welvet)
+  endif()
+endfunction()
 
 if(WELVET_BUILD_TOOLS)
   add_executable(welvet_dense_fwd
@@ -129,15 +156,17 @@ if(WELVET_BUILD_TOOLS)
     tools/dense_fwd/stepbp_wires.cpp
   )
   target_include_directories(welvet_dense_fwd PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tools/dense_fwd)
-  target_link_libraries(welvet_dense_fwd PRIVATE welvet)
+  welvet_link_engine(welvet_dense_fwd)
   if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(welvet_dense_fwd PRIVATE -ffp-contract=off)
+  elseif(MSVC)
+    target_compile_options(welvet_dense_fwd PRIVATE /fp:precise)
   endif()
 endif()
 
 if(WELVET_BUILD_EXAMPLES)
   add_executable(example_cuda_smoke examples/cuda_smoke/main.cpp)
-  target_link_libraries(example_cuda_smoke PRIVATE welvet)
+  welvet_link_engine(example_cuda_smoke)
 endif()
 
 install(TARGETS welvet

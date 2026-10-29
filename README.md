@@ -42,6 +42,7 @@ It will run directly from C++ and through a stable C ABI. Go Welvet can later de
 | Slice | Status |
 |---|:---:|
 | Linux x86_64 CMake → `libwelvet_cuda.so` | ✅ |
+| Windows amd64 CMake → `libwelvet_cuda.dll` | ✅ |
 | Leaf FormatNone forward ×23 + seqmix | ✅ |
 | NormalBP leaf+volume ×23 layers | ✅ `TestGoVCudaNormalBP` |
 | StepBP Line + Dense MeshBP | ✅ `TestGoVCudaStepBPTrain` |
@@ -291,7 +292,7 @@ A support claim is a tuple:
 | Training | Full backward + independently callable credit/update primitives |
 | Execution | CUDA compute queues; documented host epilogue if any |
 | Device | Named NVIDIA GPU (+ non-CUDA only if separately validated) |
-| Platform | Linux x86_64 first; Windows later (optional) |
+| Platform | Linux x86_64 + Windows amd64 artifacts |
 | Shape/layout | Batch, sequence, rank, stride, alignment, block tails |
 | Precision | Stored / transferred / decoded / accumulated / output / grad / update |
 | State | Stateless, recurrent, KV cache, saved activations, versioned weights, CamSync |
@@ -545,6 +546,7 @@ Per-layer evidence tables (leaf ×34, volume shapes, speed, wires): **[docs/TRAI
 | Gate | Status |
 |---|:---:|
 | Linux x86_64 CMake + nvcc build | ✅ |
+| Windows amd64 CMake + MSVC + nvcc build | ✅ |
 | Device enumerate + runtime identity string | ✅ |
 | Compile-time CUDA kernels (`kernels/*.cu`) | ✅ |
 | Device buffer alloc / upload / download | ✅ |
@@ -552,14 +554,14 @@ Per-layer evidence tables (leaf ×34, volume shapes, speed, wires): **[docs/TRAI
 | Stream / sync / error surface helpers | ⬜ |
 | Fatbin / multi-arch release packaging | ⬜ |
 | Determinism policy doc (reduction order, warps, bands) | ⬜ |
-| Windows CUDA artifact | ⬜ |
+| Windows CUDA artifact | ✅ `native/cuda/windows_amd64` in Go Welvet |
 | Other vendors (Metal/ROCm/QNN) | N/A sibling repos |
 
 | Platform | Artifact | Status |
 |---|---|:---:|
 | Linux x86_64 | `.so` / headers / kernels / wire tool | 🚧 M1 Dense fwd |
 | Linux aarch64 | Explicitly bounded later | ⬜ |
-| Windows x86_64 | Optional later | ⬜ |
+| Windows x86_64 | `scripts/build_windows.cmd` → `libwelvet_cuda.dll` | ✅ |
 
 
 ## FFI and C ABI

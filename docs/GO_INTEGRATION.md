@@ -12,19 +12,25 @@ at version 1.
 From the CUDA checkout, with the Go sibling at `../welvet`:
 
 ```sh
+# Linux x86_64
 ./scripts/linux_install_go.sh
+
+# Windows amd64 (PowerShell; MSVC Build Tools + CUDA Toolkit)
+./scripts/windows_install_go.ps1
 ```
 
-This builds the standalone wire executable and shared library, and installs the
-`.so`, C header and SHA-256 manifest into Go's `native/cuda/linux_x86_64/`.
-Override `WELVET_GO_ROOT` for another Go checkout. Building the backend requires
-CMake, a CUDA Toolkit (`nvcc`), and a host compiler supported by that toolkit
-(GCC ≤ 14 for CUDA 12.x). Go applications using the prebuilt `.so` need Go/cgo
-and a compatible NVIDIA driver/runtime; they do not rebuild the C++ engine or
-require welvet.cpp.
+Linux installs `libwelvet_cuda.so` into Go's `native/cuda/linux_x86_64/`.
+Windows installs `libwelvet_cuda.dll` into `native/cuda/windows_amd64/`.
+Both write the C header and SHA-256 manifest. Override `WELVET_GO_ROOT` for
+another Go checkout. Building the backend requires CMake, a CUDA Toolkit
+(`nvcc`), and a host compiler supported by that toolkit (GCC ≤ 14 for CUDA
+12.x on Linux; MSVC on Windows). Go applications using the prebuilt library
+need Go/cgo and a compatible NVIDIA driver/runtime; they do not rebuild the
+C++ engine or require welvet.cpp.
 
-The verified host is Linux x86_64 with an NVIDIA GPU. Older CUDA architectures
-can be selected with `CMAKE_CUDA_ARCHITECTURES`.
+Verified hosts: Linux x86_64 and Windows amd64 with an NVIDIA GPU. CUDA
+architectures can be selected with `CMAKE_CUDA_ARCHITECTURES` (Windows default
+`75;86`).
 
 ## Explicit weight ownership
 
