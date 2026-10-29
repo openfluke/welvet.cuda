@@ -9,7 +9,7 @@ It will run directly from C++ and through a stable C ABI. Go Welvet can later de
 | | |
 |--|--|
 | **Version** | **`0.79`** |
-| **Engine board** | **67 / 100** (same 10 categories as Go Welvet) |
+| **Engine board** | **79 / 100** (same 10 categories as Go Welvet) |
 | **Compute** | NVIDIA GPU (CUDA) — primary · CPU / Metal / QNN siblings remain separate repos — never implied |
 | **Parity reference** | [welvet](https://github.com/openfluke/welvet) Go **v1.2.0** (100/100) |
 | **CPU sibling** | [welvet.cpp](https://github.com/openfluke/welvet.cpp) **0.67** (semantics/wire to mirror — **score not inherited**) |
@@ -664,6 +664,8 @@ tools/dense_fwd/             w2a wire tool
 examples/cuda_smoke/         M0 smoke
 scripts/build_linux.sh
 scripts/linux_build_w2a.sh   build + invoke sibling w2a go_v_cuda
+scripts/release_smoke.py     packaged .so C ABI GPU smoke (used by release.sh)
+release.sh                   package + optional GitHub Release (linux-x86_64)
 README.md                    ← you are here (authoritative runway)
 docs/TRAINING_CHECKLIST.md   training port tracker (tick as w2a suites land)
 docs/CUDA_ONLY.md            CUDA-only execution contract
@@ -682,3 +684,19 @@ VERSIONING.md                0.x formula
 5. Repeat until the engine board is 100 and the volume trains end-to-end on CUDA.
 
 **Destination:** a complete standalone **3D volumetric** Welvet engine on NVIDIA GPU — same model contract as Go Welvet — with resident state, native API, optional FFI/NAC, and w2a evidence for every ✅.
+
+---
+
+## Release (Linux x86_64)
+
+```bash
+./release.sh --dry-run   # build, GPU-check and package locally; no git writes/publishing
+./release.sh             # commit local source changes, push branch/tag, publish GitHub release
+./release.sh --draft     # same, but create a draft GitHub Release
+./release.sh --test-go   # also run sibling w2a nativecuda Mount suites against the staged .so
+```
+
+Requires `nvcc`, a host `g++` ≤14 (conda `welvet-cuda-build` is fine), CMake, Python 3, and
+`gh` when publishing. Packages shared + static `libwelvet_cuda`, headers, kernels, `welvet_dense_fwd`,
+README/VERSIONING/LICENSE, GO_INTEGRATION + CUDA_ONLY docs, and a `MANIFEST.json`. Output lands in
+`dist/welvet-cuda-v<version>-linux-x86_64.tar.gz` (+ `.sha256` + notes).
