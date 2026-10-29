@@ -690,13 +690,11 @@ VERSIONING.md                0.x formula
 ## Release (Linux x86_64)
 
 ```bash
-./release.sh --dry-run   # build, GPU-check and package locally; no git writes/publishing
-./release.sh             # commit local source changes, push branch/tag, publish GitHub release
-./release.sh --draft     # same, but create a draft GitHub Release
-./release.sh --test-go   # also run sibling w2a nativecuda Mount suites against the staged .so
+./release.sh              # default: source tag + GitHub Release (no nvcc)
+./release.sh --dry-run    # write notes only; no commit/tag/push
+./release.sh --draft      # draft GitHub Release
+./release.sh --package    # also build linux-x86_64 binaries (needs nvcc) and attach them
 ```
 
-Requires `nvcc`, a host `g++` ≤14 (conda `welvet-cuda-build` is fine), CMake, Python 3, and
-`gh` when publishing. Packages shared + static `libwelvet_cuda`, headers, kernels, `welvet_dense_fwd`,
-README/VERSIONING/LICENSE, GO_INTEGRATION + CUDA_ONLY docs, and a `MANIFEST.json`. Output lands in
-`dist/welvet-cuda-v<version>-linux-x86_64.tar.gz` (+ `.sha256` + notes).
+Source release needs `git` + authenticated `gh`. Binary `--package` also needs `nvcc`, host `g++` ≤14,
+and CMake; output then includes `dist/welvet-cuda-v<version>-linux-x86_64.tar.gz`.
