@@ -341,22 +341,20 @@ Status linear_grad_in_leaf(Leaf& leaf, const TensorF32& gy, TensorF32* gx_out) {
   *gx_out = TensorF32{};
   if (gy.data.empty() || leaf.input.data.empty()) return Status::Ok();
   if (auto* d = dense_of(leaf)) return dense::linear_grad_in(*d, gy, leaf.input, gx_out);
+  // Match metal leaf_linear: View-wrapped ranks (e.g. Mamba [B,T,D] vs stack [1,H]
+  // gaps) reject full backward — fall back to P(gy) instead of hard-failing the cell.
   TensorF32 dW;
+  Status st = Status::Ok();
   if (leaf.child) {
-    if (auto st = stack::child_family_bp(*leaf.child, gy, leaf.input, leaf.pre, 0.0, gx_out); !st)
-      return st;
-    if (gx_out->data.empty())
-      return systems::tween::project_gap(gy, leaf.input.shape, gx_out);
-    return Status::Ok();
+    st = stack::child_family_bp(*leaf.child, gy, leaf.input, leaf.pre, 0.0, gx_out);
+  } else if (leaf.cell) {
+    st = runtime::backward::cell(*leaf.cell, gy, leaf.input, leaf.pre, gx_out, &dW);
+  } else {
+    return systems::tween::project_gap(gy, leaf.input.shape, gx_out);
   }
-  if (leaf.cell) {
-    if (auto st = runtime::backward::cell(*leaf.cell, gy, leaf.input, leaf.pre, gx_out, &dW); !st)
-      return st;
-    if (gx_out->data.empty())
-      return systems::tween::project_gap(gy, leaf.input.shape, gx_out);
-    return Status::Ok();
-  }
-  return systems::tween::project_gap(gy, leaf.input.shape, gx_out);
+  if (!st || gx_out->data.empty())
+    return systems::tween::project_gap(gy, leaf.input.shape, gx_out);
+  return Status::Ok();
 }
 
 Status add_gx(TensorF32* a, const TensorF32& b) {
