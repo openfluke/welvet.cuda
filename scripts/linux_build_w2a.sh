@@ -67,6 +67,8 @@ usage: $0 [flags]
   --proxy-train       TweenSplit proxy modes GPB1/PGB1 (TestGoVCudaProxyTrain + ProxyVolumeTrain)
   --mesh-split-modes  MeshTweenSplit/Alt/FastProxy/Sparse clock + shared volumes (TestGoVCudaMeshSplitModes)
   --training-25-29-all  StepTweenSplit Linear…Sparse Line proxies (TestGoVCudaStepProxyTrain)
+  --cameral-all         Freeze/Shadow/Adversarial/Memory + CamSync (TestGoVCudaCameralTrain|CamSync|…)
+  --go-routing          Mixed Go/C++/CUDA JSON routing (requires install + C++ artifact)
   --help
 EOF
 }
@@ -77,6 +79,8 @@ if [[ $# -gt 0 ]]; then
     --help|-h) usage; exit 0 ;;
     --smoke) MODE=smoke; shift ;;
     --gaps) MODE=gaps; shift ;;
+    --cameral-all) MODE=cameral-all; shift ;;
+    --go-routing) MODE=go-routing; shift ;;
     --dense-fwd|--rmsnorm-fwd|--layernorm-fwd|--softmax-fwd|--swiglu-fwd|--embedding-fwd|--mha-fwd|--cnn-fwd|--convt-fwd|--rnn-fwd|--lstm-fwd|--sequential-fwd|--residual-fwd|--mamba-fwd|--metacognition-fwd|--gdn-fwd|--kmeans-fwd|--parallel-fwd|--seqmix-fwd|--leaf-fwd-all|--dense-train|--rmsnorm-train|--layernorm-train|--softmax-train|--swiglu-train|--embedding-train|--mha-train|--cnn-train|--convt-train|--rnn-train|--lstm-train|--sequential-train|--residual-train|--stack-train|--mamba-train|--metacognition-train|--gdn-train|--kmeans-train|--parallel-train|--normalbp-all|--stepbp-train|--meshbp-train|--tween-train|--tweenchain-train|--tweensplit-train|--steptweensplit-train|--tweenalt-train|--steptweenalt-train|--meshtween-train|--meshtweenchain-train|--steptween-train|--steptweenchain-train|--proxy-train|--mesh-split-modes|--training-25-29-all)
       MODE="${1#--}"; shift ;;
     *)
@@ -90,6 +94,13 @@ fi
 "$ROOT/scripts/build_linux.sh"
 
 export WELVET_CUDA_DENSE_FWD="$BUILD/welvet_dense_fwd"
+if [[ -z "${WELVET_CUDA_LIBRARY:-}" ]]; then
+  if [[ -f "$ROOT/../welvet/native/cuda/linux_x86_64/libwelvet_cuda.so" ]]; then
+    export WELVET_CUDA_LIBRARY="$ROOT/../welvet/native/cuda/linux_x86_64/libwelvet_cuda.so"
+  elif [[ -f "$BUILD/libwelvet_cuda.so" ]]; then
+    export WELVET_CUDA_LIBRARY="$BUILD/libwelvet_cuda.so"
+  fi
+fi
 if [[ -z "${WELVET_DENSE_FWD:-}" ]]; then
   for cand in "$ROOT/../welvet.cpp/build/welvet_dense_fwd" "$ROOT/../welvet.cpp/build/Release/welvet_dense_fwd"; do
     if [[ -x "$cand" ]]; then
@@ -105,7 +116,7 @@ run_go_test() {
     echo "w2a sibling not found at $W2A" >&2
     exit 1
   fi
-  export LD_LIBRARY_PATH="${ROOT}/.deps/cuda/cuda/lib64:${LD_LIBRARY_PATH:-}"
+  export LD_LIBRARY_PATH="${ROOT}/.deps/cuda/cuda/lib64:${BUILD}:${LD_LIBRARY_PATH:-}"
   # Default 1 measured bench iter (match metal); set WELVET_CUDA_BENCH_ITERS=2000 for long perf.
   export WELVET_CUDA_BENCH_ITERS="${WELVET_CUDA_BENCH_ITERS:-1}"
   (
@@ -113,10 +124,11 @@ run_go_test() {
     env -u CC -u CXX -u CMAKE_CXX_COMPILER -u CMAKE_C_COMPILER \
       PATH="/usr/bin:/usr/local/go/bin:${PATH}" \
       WELVET_CUDA_DENSE_FWD="$WELVET_CUDA_DENSE_FWD" \
+      WELVET_CUDA_LIBRARY="${WELVET_CUDA_LIBRARY:-}" \
       WELVET_DENSE_FWD="${WELVET_DENSE_FWD:-}" \
       WELVET_CUDA_BENCH_ITERS="$WELVET_CUDA_BENCH_ITERS" \
       LD_LIBRARY_PATH="$LD_LIBRARY_PATH" \
-      go test ./tests/go_v_cuda -v -count=1 -timeout 90m -run "$pattern"
+      go test ./tests/go_v_cuda -v -count=1 -timeout "${WELVET_CUDA_TEST_TIMEOUT:-90m}" -run "$pattern"
   )
 }
 
@@ -178,4 +190,12 @@ case "$MODE" in
   proxy-train) run_go_test '^(TestGoVCudaProxyTrain|TestGoVCudaProxyVolumeTrain)$' ;;
   mesh-split-modes) run_go_test '^TestGoVCudaMeshSplitModes$' ;;
   training-25-29-all) run_go_test '^TestGoVCudaStepProxyTrain$' ;;
+  cameral-all) WELVET_CUDA_TEST_TIMEOUT="${WELVET_CUDA_TEST_TIMEOUT:-180m}" run_go_test '^(TestGoVCudaCameralTrain|TestGoVCudaCamSync|TestGoStoreReplaceInvalidatesWires|TestGoVCudaOnly)$' ;;
+  go-routing)
+    "$ROOT/scripts/linux_install_go.sh"
+    export WELVET_REQUIRE_CPP_ROUTING=1
+    export WELVET_CUDA_BENCH_ITERS="${WELVET_CUDA_BENCH_ITERS:-1}"
+    export WELVET_CUDA_LIBRARY="${WELVET_CUDA_LIBRARY:-$ROOT/../welvet/native/cuda/linux_x86_64/libwelvet_cuda.so}"
+    run_go_test '^(TestGoNativeCuda.*|TestGoVCudaOnly)$'
+    ;;
 esac

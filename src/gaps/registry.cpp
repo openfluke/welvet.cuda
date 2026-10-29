@@ -90,7 +90,12 @@ const std::vector<Entry>& build() {
       {"runtime.mesh", "runtime",
        "Heterogeneous MeshBP FamilyBP (MGB1) + Dense MBP1 + runtime/step", true},
       {"train.modes.x29", "training", "gap? all 29 TrainModes + Freeze/Shadow/Adv/Memory", false},
-      {"train.camsync", "training", "gap? CamSync / BlendStores CUDA", false},
+      {"train.advanced", "training",
+       "CUDA Freeze/Shadow/Adversarial/Memory, mixed branches and Stack overrides (CMB1)", true},
+      {"train.camsync", "training",
+       "CUDA CamSync/BlendStores, native repacking, groups/cross links (CMB1)", true},
+      {"abi.model_session", "abi",
+       "welvet_model_* Mount/Forward/TrainMSE/Export + welvet_cuda_blob_free", true},
 
       // --- Systems / model ---
       {"systems.tween", "systems", "ModeTween projected credit CUDA", true},

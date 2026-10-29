@@ -71,12 +71,15 @@ set(WELVET_CORE_SOURCES
   src/runtime/tween_chain_train.cpp
   src/runtime/tween_split_train.cpp
   src/runtime/tween_alt_train.cpp
+  src/runtime/cameral_train.cpp
   src/systems/tween.cpp
   src/systems/tween_chain.cpp
   src/systems/tween_split.cpp
   src/systems/tween_alt.cpp
+  src/systems/cam_sync.cpp
   src/gaps/registry.cpp
   src/interop/c_abi.cpp
+  src/interop/model_session.cpp
 )
 
 add_library(welvet_cuda_obj OBJECT ${WELVET_CORE_SOURCES})

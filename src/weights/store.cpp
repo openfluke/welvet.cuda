@@ -31,6 +31,14 @@ Status WeightStore::matvect_f32(const float*, float*) const {
                      "weights.matvect_f32: use CUDA Dense dispatch; host MatVecT is forbidden");
 }
 
+Status WeightStore::set_from_f32(const std::vector<float>& values) {
+  const int n = rows * cols;
+  if (n <= 0 || static_cast<int>(values.size()) != n || format != QuantFormat::None) {
+    return Status::Err(StatusCode::InvalidArgument, "blend: invalid native store replacement");
+  }
+  return encode_format_none(dtype, values.data(), n);
+}
+
 Status WeightStore::export_f32(float* dst) const {
   if (!dst) {
     return Status::Err(StatusCode::InvalidArgument, "weights: nil dst");

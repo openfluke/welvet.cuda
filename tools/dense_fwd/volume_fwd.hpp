@@ -103,3 +103,4 @@ int run_parallel_normalbp(int bench_iters);
 int run_volume_parallel_normalbp(int bench_iters, VolumeTrainMode mode = VolumeTrainMode::NormalBP);
 int run_parallel_poly_train(int bench_iters);
 int run_normalbp_child(int bench_iters);
+int run_cameral(int bench_iters); // CMB1 -> CMBO

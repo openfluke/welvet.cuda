@@ -1,5 +1,6 @@
 #pragma once
 
+#include "welvet/cameral.hpp"
 #include "welvet/cnn1.hpp"
 #include "welvet/cnn2.hpp"
 #include "welvet/cnn3.hpp"
@@ -26,7 +27,12 @@
 #include "welvet/tensor.hpp"
 
 #include <cstdint>
+#include <memory>
 #include <vector>
+
+namespace welvet::runtime::line {
+struct State;
+}
 
 namespace welvet::stack {
 
@@ -83,6 +89,7 @@ struct ParallelNest {
 
 struct Child {
   Kind kind = Kind::None;
+  cameral::Controls controls{};
   dense::Layer dense_op;
   rmsnorm::Layer rmsnorm_op;
   layernorm::Layer layernorm_op;
@@ -112,9 +119,11 @@ struct Child {
 };
 
 struct Layer {
+  std::shared_ptr<runtime::line::State> line_state;
   std::vector<Child> children;
   LayerMeta meta{};
   SplitAccel accel{};
+  cameral::Controls controls{};
 };
 
 void flatten_ops(Layer& root, std::vector<Child*>* out);

@@ -35,6 +35,9 @@ struct WeightStore {
   // Decode full matrix to float32 (FormatNone).
   Status export_f32(float* dst) const;
 
+  // Replace FormatNone payload from float32 values (CamSync blend writeback).
+  Status set_from_f32(const std::vector<float>& values);
+
   // y[rows] = W @ x[cols], float64 accumulate then cast to float32.
   Status matvec_f32(const float* x, float* y) const;
   // gx[cols] += W^T @ gy[rows] (float64 accumulate; caller zeros gx).

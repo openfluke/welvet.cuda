@@ -1,11 +1,13 @@
 #pragma once
 
+#include "welvet/cameral.hpp"
 #include "welvet/dense.hpp"
 #include "welvet/dtype.hpp"
 #include "welvet/layer.hpp"
 #include "welvet/stack.hpp"
 #include "welvet/status.hpp"
 #include "welvet/tensor.hpp"
+#include "welvet/train_mode.hpp"
 
 #include <optional>
 #include <vector>
@@ -43,10 +45,15 @@ using BranchKind = stack::Kind;
 
 struct Layer {
   Config cfg{};
+  cameral::Controls controls{};
+  stack::SplitAccel accel{};
   std::vector<Branch> branches;
   std::optional<dense::Layer> gate;
   LayerMeta meta{};
 };
+
+TrainMode effective_branch_mode(const Layer& l, int i, TrainMode parent);
+bool has_mixed_branch_modes(const Layer& l);
 
 Status new_configured(const Config& cfg, DType dt, const float* packed_or_null, Layer* out);
 Status new_from_branches(const Config& cfg, std::vector<Branch> branches,

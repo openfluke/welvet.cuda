@@ -34,6 +34,28 @@ WELVET_API int32_t welvet_cuda_available(void);
 WELVET_API int32_t welvet_gaps_count(void);
 WELVET_API int32_t welvet_gaps_done(void);
 
+/* Versioned persistent model sessions. All passed buffers are copied during the
+ * call; no Go pointers are retained. Native weights remain authoritative until
+ * explicitly exported. Release sessions and output blobs with their own APIs.
+ * Model descriptor WMN1 and snapshot NWS1 are defined in docs/GO_INTEGRATION.md. */
+typedef struct welvet_model_session welvet_model_session;
+typedef struct welvet_cuda_blob { uint8_t* data; size_t size; } welvet_cuda_blob;
+WELVET_API int32_t welvet_model_abi_version(void);
+WELVET_API welvet_status welvet_model_mount(const uint8_t*, size_t, welvet_model_session**);
+WELVET_API welvet_status welvet_model_forward(welvet_model_session*, const uint8_t*, size_t, welvet_cuda_blob*);
+WELVET_API welvet_status welvet_model_train_credit(welvet_model_session*, int32_t, double, const uint8_t*, size_t);
+WELVET_API welvet_status welvet_model_dense_proxy(welvet_model_session*, int32_t, const uint8_t*, size_t, welvet_cuda_blob*);
+/* Optional ABI-1 segment extension: forward returns pre/post; backward returns
+ * dInput/dWeights for an incoming output gradient, without updating parameters. */
+WELVET_API welvet_status welvet_model_forward_pair(welvet_model_session*, const uint8_t*, size_t, welvet_cuda_blob*);
+WELVET_API welvet_status welvet_model_backward(welvet_model_session*, const uint8_t*, size_t, welvet_cuda_blob*);
+WELVET_API welvet_status welvet_model_apply_sgd(welvet_model_session*, double, const uint8_t*, size_t);
+WELVET_API welvet_status welvet_model_train_mse(welvet_model_session*, int32_t mode, double lr, int32_t ticks, const uint8_t*, size_t, double* loss);
+WELVET_API welvet_status welvet_model_export_weights(welvet_model_session*, welvet_cuda_blob*);
+WELVET_API welvet_status welvet_model_sync(welvet_model_session*, int32_t event);
+WELVET_API void welvet_model_release(welvet_model_session*);
+WELVET_API void welvet_cuda_blob_free(welvet_cuda_blob*);
+
 /* Dense FormatNone forward — mount+execute+release. */
 WELVET_API welvet_status welvet_dense_forward_f32(
     int32_t batch, int32_t in, int32_t out, int32_t act, int32_t dtype, int32_t backend,

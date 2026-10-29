@@ -228,7 +228,7 @@ Status pack_native(DType dt, const float* w, int n, std::vector<uint8_t>* out, f
     out->resize(n * 4);
     for (int i = 0; i < n; ++i) {
       // Go: Round(float64(v/scale*2147483647)) with float32 arithmetic first
-      // (2147483647 is not exact in f32 → 2147483648).
+      // (2147483647 is not exact in f32 → 2147483648). Match welvet.metal.
       const float qf = w[i] / s * 2147483647.0f;
       const int32_t q = static_cast<int32_t>(std::round(static_cast<double>(qf)));
       put_u32(*out, i * 4, static_cast<uint32_t>(q));

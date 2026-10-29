@@ -1474,6 +1474,7 @@ int main(int argc, char** argv) {
   if (std::memcmp(magic, "PNV1", 4) == 0) return run_volume_parallel_normalbp(bench_iters);
   if (std::memcmp(magic, "PPB1", 4) == 0) return run_parallel_poly_train(bench_iters);
   if (std::memcmp(magic, "NBL1", 4) == 0) return run_normalbp_child(bench_iters);
+  if (std::memcmp(magic, "CMB1", 4) == 0) return run_cameral(bench_iters);
   if (std::memcmp(magic, "WVR1", 4) == 0) return run_rmsnorm(bench_iters);
   if (std::memcmp(magic, "WVL1", 4) == 0) return run_layernorm(bench_iters);
   if (std::memcmp(magic, "WSM1", 4) == 0) return run_softmax(bench_iters);

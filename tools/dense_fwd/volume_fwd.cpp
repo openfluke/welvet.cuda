@@ -30,6 +30,7 @@
 #include "welvet/embedding.hpp"
 #include "welvet/mha.hpp"
 #include "welvet/runtime/backward.hpp"
+#include "welvet/runtime/cameral_train.hpp"
 #include "welvet/runtime/forward.hpp"
 #include "welvet/runtime/training.hpp"
 #include "welvet/swiglu.hpp"
@@ -5372,8 +5373,8 @@ int run_parallel_normalbp(int bench_iters) {
   double shadow_coef = 0.0, surprise_thresh = 0.0;
   if (!read_exact(&shadow_coef, 1) || !read_exact(&surprise_thresh, 1)) return 2;
   for (int m : modes) {
-    if (m != 0 && m != 1) {
-      std::fprintf(stderr, "PNB1: only Inherit/NormalBP supported\n");
+    if (m < 0 || m > 33) {
+      std::fprintf(stderr, "PNB1: invalid TrainMode %d\n", m);
       return 1;
     }
   }
@@ -5395,7 +5396,13 @@ int run_parallel_normalbp(int bench_iters) {
         !st) {
       return st;
     }
-    return train_parallel(layer, xin, target, lr, &loss);
+    layer.controls.modes.clear();
+    layer.controls.modes.reserve(modes.size());
+    for (int m : modes) layer.controls.modes.push_back(static_cast<welvet::TrainMode>(m));
+    layer.controls.shadow_coef = shadow_coef;
+    layer.controls.surprise_thresh = surprise_thresh;
+    return welvet::runtime::cameral_train::train_mse(layer, xin, target, welvet::TrainMode::NormalBP,
+                                                     lr, &loss);
   };
   if (bench_iters > 0) {
     for (int i = 0; i < 2; ++i) {

@@ -7,6 +7,7 @@
 #include "welvet/cuda/embedding.hpp"
 #include "welvet/cuda/conv.hpp"
 #include "welvet/cuda/tween.hpp"
+#include "welvet/cuda/cameral.hpp"
 #include "welvet/activate.hpp"
 
 #include <cuda_runtime.h>
@@ -2499,6 +2500,191 @@ Status launch_project_gap(const float* src_host, float* dst_host, std::int32_t s
                    "project_gap download");
   cleanup();
   return st;
+}
+
+// --- Cameral (Freeze/Shadow/CamSync) ---
+__global__ void cam_shadow_f64(float* gy, const float* student, const float* teacher,
+                               unsigned long long n, double coef) {
+  unsigned long long i = blockIdx.x * blockDim.x + threadIdx.x;
+  if (i >= n) return;
+  double term = coef * 2.0 * (static_cast<double>(student[i]) - static_cast<double>(teacher[i])) /
+                static_cast<double>(n);
+  gy[i] = static_cast<float>(static_cast<double>(gy[i]) + term);
+}
+__global__ void cam_gate_gap_f64(const float* gy, float* out, unsigned long long n,
+                                 unsigned long long out_n) {
+  unsigned long long tid = blockIdx.x * blockDim.x + threadIdx.x;
+  if (tid >= out_n) return;
+  double sum = 0;
+  for (unsigned long long i = 0; i < n; ++i) sum += static_cast<double>(gy[i]);
+  out[tid] = static_cast<float>((sum / static_cast<double>(n)) * 0.1);
+}
+__global__ void cam_blend_f64(const float* pack, const double* alphas, float* out,
+                              unsigned long long n, unsigned long long nb) {
+  unsigned long long tid = blockIdx.x * blockDim.x + threadIdx.x;
+  if (tid >= n) return;
+  double mean = 0;
+  for (unsigned long long k = 0; k < nb; ++k)
+    mean += static_cast<double>(pack[k * n + tid]) / static_cast<double>(nb);
+  for (unsigned long long k = 0; k < nb; ++k) {
+    double a = alphas[k];
+    float old = pack[k * n + tid];
+    if (a <= 0) {
+      out[k * n + tid] = old;
+      continue;
+    }
+    if (a > 1) a = 1;
+    out[k * n + tid] =
+        static_cast<float>((1.0 - a) * static_cast<double>(old) + a * mean);
+  }
+}
+__global__ void cam_bias_blend_f64(const double* bias, const double* alphas, double* out,
+                                   unsigned long long n, unsigned long long nb) {
+  unsigned long long tid = blockIdx.x * blockDim.x + threadIdx.x;
+  if (tid >= n) return;
+  double mean = 0;
+  for (unsigned long long k = 0; k < nb; ++k) mean += bias[k * n + tid] / static_cast<double>(nb);
+  for (unsigned long long k = 0; k < nb; ++k) {
+    double a = alphas[k];
+    double old = bias[k * n + tid];
+    if (a <= 0) {
+      out[k * n + tid] = old;
+      continue;
+    }
+    if (a > 1) a = 1;
+    out[k * n + tid] = (1.0 - a) * old + a * mean;
+  }
+}
+
+Status launch_cam_shadow(float* gy, const float* student, const float* teacher, std::int32_t n,
+                         double coef) {
+  if (!gy || !student || !teacher || n <= 0) return Status::Err(StatusCode::InvalidArgument, "cam_shadow args");
+  float *d_gy = nullptr, *d_st = nullptr, *d_te = nullptr;
+  size_t bytes = size_t(n) * sizeof(float);
+  auto cleanup = [&] {
+    if (d_gy) cudaFree(d_gy);
+    if (d_st) cudaFree(d_st);
+    if (d_te) cudaFree(d_te);
+  };
+  auto ok = cuda_status(cudaMalloc(&d_gy, bytes), "cam_shadow gy");
+  if (!ok) return ok;
+  ok = cuda_status(cudaMalloc(&d_st, bytes), "cam_shadow st");
+  if (!ok) { cleanup(); return ok; }
+  ok = cuda_status(cudaMalloc(&d_te, bytes), "cam_shadow te");
+  if (!ok) { cleanup(); return ok; }
+  ok = cuda_status(cudaMemcpy(d_gy, gy, bytes, cudaMemcpyHostToDevice), "cam_shadow up gy");
+  if (!ok) { cleanup(); return ok; }
+  ok = cuda_status(cudaMemcpy(d_st, student, bytes, cudaMemcpyHostToDevice), "cam_shadow up st");
+  if (!ok) { cleanup(); return ok; }
+  ok = cuda_status(cudaMemcpy(d_te, teacher, bytes, cudaMemcpyHostToDevice), "cam_shadow up te");
+  if (!ok) { cleanup(); return ok; }
+  constexpr int kT = 256;
+  int blocks = int((size_t(n) + kT - 1) / kT);
+  cam_shadow_f64<<<blocks, kT>>>(d_gy, d_st, d_te, (unsigned long long)n, coef);
+  ok = cuda_status(cudaGetLastError(), "cam_shadow launch");
+  if (!ok) { cleanup(); return ok; }
+  ok = cuda_status(cudaDeviceSynchronize(), "cam_shadow sync");
+  if (!ok) { cleanup(); return ok; }
+  ok = cuda_status(cudaMemcpy(gy, d_gy, bytes, cudaMemcpyDeviceToHost), "cam_shadow down");
+  cleanup();
+  return ok;
+}
+
+Status launch_cam_gate_gap(const float* gy, std::int32_t n, float* out, std::int32_t out_n) {
+  if (!gy || !out || n <= 0 || out_n <= 0)
+    return Status::Err(StatusCode::InvalidArgument, "cam_gate_gap args");
+  float *d_gy = nullptr, *d_out = nullptr;
+  auto cleanup = [&] {
+    if (d_gy) cudaFree(d_gy);
+    if (d_out) cudaFree(d_out);
+  };
+  auto ok = cuda_status(cudaMalloc(&d_gy, size_t(n) * sizeof(float)), "cam_gate gy");
+  if (!ok) return ok;
+  ok = cuda_status(cudaMalloc(&d_out, size_t(out_n) * sizeof(float)), "cam_gate out");
+  if (!ok) { cleanup(); return ok; }
+  ok = cuda_status(cudaMemcpy(d_gy, gy, size_t(n) * sizeof(float), cudaMemcpyHostToDevice), "cam_gate up");
+  if (!ok) { cleanup(); return ok; }
+  constexpr int kT = 256;
+  int blocks = int((size_t(out_n) + kT - 1) / kT);
+  cam_gate_gap_f64<<<blocks, kT>>>(d_gy, d_out, (unsigned long long)n, (unsigned long long)out_n);
+  ok = cuda_status(cudaGetLastError(), "cam_gate launch");
+  if (!ok) { cleanup(); return ok; }
+  ok = cuda_status(cudaDeviceSynchronize(), "cam_gate sync");
+  if (!ok) { cleanup(); return ok; }
+  ok = cuda_status(cudaMemcpy(out, d_out, size_t(out_n) * sizeof(float), cudaMemcpyDeviceToHost),
+                   "cam_gate down");
+  cleanup();
+  return ok;
+}
+
+Status launch_cam_blend(const float* packed_host, const double* alphas_host, float* blended_host,
+                        std::int32_t n, std::int32_t nb) {
+  if (!packed_host || !alphas_host || !blended_host || n <= 0 || nb < 2)
+    return Status::Err(StatusCode::InvalidArgument, "cam_blend args");
+  float *pack = nullptr, *out = nullptr;
+  double* alphas = nullptr;
+  size_t pbytes = size_t(n) * size_t(nb) * sizeof(float);
+  size_t abytes = size_t(nb) * sizeof(double);
+  auto cleanup = [&] {
+    if (pack) cudaFree(pack);
+    if (out) cudaFree(out);
+    if (alphas) cudaFree(alphas);
+  };
+  auto ok = cuda_status(cudaMalloc(&pack, pbytes), "cam_blend pack");
+  if (!ok) return ok;
+  ok = cuda_status(cudaMalloc(&out, pbytes), "cam_blend out");
+  if (!ok) { cleanup(); return ok; }
+  ok = cuda_status(cudaMalloc(&alphas, abytes), "cam_blend alpha");
+  if (!ok) { cleanup(); return ok; }
+  ok = cuda_status(cudaMemcpy(pack, packed_host, pbytes, cudaMemcpyHostToDevice), "cam_blend up p");
+  if (!ok) { cleanup(); return ok; }
+  ok = cuda_status(cudaMemcpy(alphas, alphas_host, abytes, cudaMemcpyHostToDevice), "cam_blend up a");
+  if (!ok) { cleanup(); return ok; }
+  constexpr int kT = 256;
+  int blocks = int((size_t(n) + kT - 1) / kT);
+  cam_blend_f64<<<blocks, kT>>>(pack, alphas, out, (unsigned long long)n, (unsigned long long)nb);
+  ok = cuda_status(cudaGetLastError(), "cam_blend launch");
+  if (!ok) { cleanup(); return ok; }
+  ok = cuda_status(cudaDeviceSynchronize(), "cam_blend sync");
+  if (!ok) { cleanup(); return ok; }
+  ok = cuda_status(cudaMemcpy(blended_host, out, pbytes, cudaMemcpyDeviceToHost), "cam_blend down");
+  cleanup();
+  return ok;
+}
+
+Status launch_cam_bias_blend(const double* biases_host, const double* alphas_host,
+                             double* blended_host, std::int32_t n, std::int32_t nb) {
+  if (!biases_host || !alphas_host || !blended_host || n <= 0 || nb < 2)
+    return Status::Err(StatusCode::InvalidArgument, "cam_bias_blend args");
+  double *bias = nullptr, *out = nullptr, *alphas = nullptr;
+  size_t bbytes = size_t(n) * size_t(nb) * sizeof(double);
+  size_t abytes = size_t(nb) * sizeof(double);
+  auto cleanup = [&] {
+    if (bias) cudaFree(bias);
+    if (out) cudaFree(out);
+    if (alphas) cudaFree(alphas);
+  };
+  auto ok = cuda_status(cudaMalloc(&bias, bbytes), "cam_bias bias");
+  if (!ok) return ok;
+  ok = cuda_status(cudaMalloc(&out, bbytes), "cam_bias out");
+  if (!ok) { cleanup(); return ok; }
+  ok = cuda_status(cudaMalloc(&alphas, abytes), "cam_bias alpha");
+  if (!ok) { cleanup(); return ok; }
+  ok = cuda_status(cudaMemcpy(bias, biases_host, bbytes, cudaMemcpyHostToDevice), "cam_bias up b");
+  if (!ok) { cleanup(); return ok; }
+  ok = cuda_status(cudaMemcpy(alphas, alphas_host, abytes, cudaMemcpyHostToDevice), "cam_bias up a");
+  if (!ok) { cleanup(); return ok; }
+  constexpr int kT = 256;
+  int blocks = int((size_t(n) + kT - 1) / kT);
+  cam_bias_blend_f64<<<blocks, kT>>>(bias, alphas, out, (unsigned long long)n,
+                                     (unsigned long long)nb);
+  ok = cuda_status(cudaGetLastError(), "cam_bias launch");
+  if (!ok) { cleanup(); return ok; }
+  ok = cuda_status(cudaDeviceSynchronize(), "cam_bias sync");
+  if (!ok) { cleanup(); return ok; }
+  ok = cuda_status(cudaMemcpy(blended_host, out, bbytes, cudaMemcpyDeviceToHost), "cam_bias down");
+  cleanup();
+  return ok;
 }
 
 } // namespace welvet::cuda

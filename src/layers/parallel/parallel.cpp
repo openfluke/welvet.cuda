@@ -1,6 +1,7 @@
 #include "welvet/parallel.hpp"
 
 #include "welvet/activate.hpp"
+#include "welvet/cuda/cameral.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -317,6 +318,20 @@ const dense::Layer* dense_branch(const Layer& l, int i) {
   if (i < 0 || i >= static_cast<int>(l.branches.size())) return nullptr;
   const auto& br = l.branches[static_cast<std::size_t>(i)];
   return br.kind == BranchKind::Dense ? &br.dense_op : nullptr;
+}
+
+TrainMode effective_branch_mode(const Layer& l, int i, TrainMode parent) {
+  return resolve_train_mode(i >= 0 && i < static_cast<int>(l.controls.modes.size())
+                                ? l.controls.modes[static_cast<std::size_t>(i)]
+                                : TrainMode::Inherit,
+                            parent);
+}
+
+bool has_mixed_branch_modes(const Layer& l) {
+  for (auto mode : l.controls.modes) {
+    if (mode != TrainMode::Inherit) return true;
+  }
+  return false;
 }
 
 Status new_configured(const Config& cfg_in, DType dt, const float* packed_or_null, Layer* out) {
@@ -707,21 +722,14 @@ Status split_combine_grad(const Layer& layer, const TensorF32& grad_out,
 }
 
 Status approx_gate_grad(const Layer& layer, const TensorF32& grad_out, TensorF32* gate_gy) {
-  if (!gate_gy) {
-    return Status::Err(StatusCode::InvalidArgument, "parallel: nil gate_gy");
+  if (!gate_gy || grad_out.data.empty() || grad_out.shape.empty()) {
+    return Status::Err(StatusCode::InvalidArgument, "cameral gate gap shape");
   }
   const int nb = static_cast<int>(layer.branches.size());
-  int batch = 1;
-  if (!grad_out.shape.empty()) batch = static_cast<int>(grad_out.shape[0]);
-  gate_gy->shape = {batch, nb};
-  gate_gy->data.assign(static_cast<std::size_t>(batch * nb), 0.0f);
-  if (grad_out.data.empty()) return Status::Ok();
-  double mean = 0.0;
-  for (float v : grad_out.data) mean += static_cast<double>(v);
-  mean /= static_cast<double>(grad_out.data.size());
-  const float fill = static_cast<float>(mean * 0.1);
-  for (float& v : gate_gy->data) v = fill;
-  return Status::Ok();
+  gate_gy->shape = {grad_out.shape[0], static_cast<std::int64_t>(nb)};
+  gate_gy->data.resize(static_cast<std::size_t>(gate_gy->shape[0]) * static_cast<std::size_t>(nb));
+  return cuda::launch_cam_gate_gap(grad_out.data.data(), static_cast<std::int32_t>(grad_out.data.size()),
+                                   gate_gy->data.data(), static_cast<std::int32_t>(gate_gy->data.size()));
 }
 
 Status backward_f32(Layer& layer, const TensorF32& grad_out, const TensorF32& input,
